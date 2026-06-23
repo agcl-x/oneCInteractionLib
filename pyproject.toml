@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0.0", "wheel"]
+requires = ["setuptools>=61.0.0", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "oneCInteraction"
-version = "1.0.2"
+dynamic = ["version"]
 description = "A Python library for interacting with 1C:Enterprise databases via COM connection."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -20,3 +20,6 @@ dependencies = [
     "pytz",
     "pywin32; platform_system == 'Windows'"
 ]
+
+[tool.setuptools_scm]
+
