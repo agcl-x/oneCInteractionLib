@@ -21,5 +21,6 @@ dependencies = [
     "pywin32; platform_system == 'Windows'"
 ]
 
+
 [tool.setuptools_scm]
 

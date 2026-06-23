@@ -48,6 +48,7 @@ jobs:
     permissions:
       id-token: write # Required for Trusted Publishing
 
+
     steps:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
