@@ -1,4 +1,4 @@
-# 1C Interaction Library (`onec_interaction`)
+# 1C Interaction Library (`oneCInteraction`)
 
 A modular, clean Python library for interacting with 1C:Enterprise databases using Windows COM connection (`V83.COMConnector`).
 
