@@ -77,8 +77,9 @@ Represents a product.
 
 #### `Variety`
 Represents a product variant with specific prices and stock levels.
-- `n_price` (float): Retail price for the variant.
+- `n_priceRetail` (float): Retail price for the variant.
 - `n_priceOpt` (float): Wholesale price for the variant.
+- `n_pricePurchase` (float): Purchase price for the variant.
 - `d_count` (dict): Stock balances by warehouse in the format `{"Warehouse Name": quantity}`.
 - `l_characteristics` (list of `Characteristic`): List of characteristics for the variant.
 
@@ -201,9 +202,9 @@ c_conn = Connection(
 )
 
 # 2. Configure 1C Default Codes
-c_conn.s_warehouse_code = "000000001"    # Warehouse code
-c_conn.s_counteragent_code = "000000045" # Bot customer/counteragent code
-c_conn.s_organisation_code = "000000001" # Organization code
+c_conn.s_warehouse_code = "000000001"  # Warehouse code
+c_conn.s_counteragent_code = "000000045"  # Bot customer/counteragent code
+c_conn.s_organisation_code = "000000001"  # Organization code
 
 # 3. Establish connection to 1C
 c_conn.initiate_connection()
@@ -214,18 +215,18 @@ if c_conn.c_v8:
         ignored_cats = ["Archive", "System"]
         categories = c_conn.groups.get_tree(ignored_cats)
         print(f"Loaded {len(categories)} root categories.")
-        
+
         # 5. Get products from the first category
         first_group = categories[0]
         products = c_conn.nomenclature.get_by_group(first_group.c_ref)
         print(f"Found products in group {first_group.s_name}: {len(products)}")
-        
+
         for p in products[:3]:
             print(f"Product: {p.s_name} | SKU: {p.s_article}")
             if p.l_variety:
                 v = p.l_variety[0]
-                print(f"  Price: {v.n_price} UAH | Stocks: {v.d_count}")
-                
+                print(f"  Price: {v.n_priceRetail} UAH | Stocks: {v.d_count}")
+
             # Download product images
             images = c_conn.nomenclature.get_images(p, s_imageDirIn="static/images")
             print(f"  Downloaded images: {images}")
@@ -237,7 +238,7 @@ if c_conn.c_v8:
             s_customerPhoneIn="+380991112233",
             s_customerAddressIn="Kyiv, Nova Poshta Warehouse #1"
         )
-        
+
         items = [
             OrderItem(
                 s_productArticleIn="ART-1024",
@@ -245,26 +246,26 @@ if c_conn.c_v8:
                 n_productCountIn=2
             )
         ]
-        
+
         new_order = Order(
             c_orderCustomerIn=customer,
             l_orderItemsListIn=items
         )
-        
+
         # Submit the order to 1C
         order_number = c_conn.orders.push(new_order)
         if order_number:
             print(f"Order created successfully in 1C! Order Number: {order_number}")
-            
+
             # Update TTN and status details
             new_order.n_orderCode = order_number
             new_order.s_TTN = "20450011223344"
             new_order.s_status = "Shipped"
             c_conn.orders.update_info(new_order)
-            
+
             # Output order details formatted as HTML string
             print(str(new_order))
-            
+
     finally:
         # Always clean up and close the connection
         c_conn.close_connection()

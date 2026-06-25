@@ -27,7 +27,7 @@ class Connection:
         self.s_warehouse_code = ""
         self.s_counteragent_code = ""
         self.s_organisation_code = ""
-        self.sl_price_types = ["Розничная", "Оптовая"]
+        self.sl_price_types = ["Розничная", "Оптовая", "Закупочная"]
 
         # Managers (Composition)
         self.nomenclature = NomenclatureManager(self)

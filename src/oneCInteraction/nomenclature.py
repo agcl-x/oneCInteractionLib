@@ -85,6 +85,10 @@ class NomenclatureManager:
                     КОГДА ISNULL(WholesalePrices.Цена, 0) > 0 ТОГДА WholesalePrices.Цена 
                     ИНАЧЕ ISNULL(GeneralWholesalePrices.Цена, 0) 
                 КОНЕЦ AS WholesalePrice,
+                ВЫБОР 
+                    КОГДА ISNULL(PurchasePrices.Цена, 0) > 0 ТОГДА PurchasePrices.Цена 
+                    ИНАЧЕ ISNULL(GeneralPurchasePrices.Цена, 0) 
+                КОНЕЦ AS PurchasePrice,
                 ISNULL(Stocks.КоличествоОстаток, 0) AS Quantity
             FROM Справочник.Номенклатура AS MainTable
             LEFT JOIN Справочник.ХарактеристикиНоменклатуры AS Chars
@@ -93,10 +97,14 @@ class NomenclatureManager:
                 ON RetailPrices.Номенклатура = MainTable.Ссылка AND RetailPrices.ХарактеристикаНоменклатуры = Chars.Ссылка
             LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура В (&ProductRefs) AND ТипЦен = &WholesalePriceType) AS WholesalePrices
                 ON WholesalePrices.Номенклатура = MainTable.Ссылка AND WholesalePrices.ХарактеристикаНоменклатуры = Chars.Ссылка
+            LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура В (&ProductRefs) AND ТипЦен = &PurchasePriceType) AS PurchasePrices
+                ON PurchasePrices.Номенклатура = MainTable.Ссылка AND PurchasePrices.ХарактеристикаНоменклатуры = Chars.Ссылка
             LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура В (&ProductRefs) AND ТипЦен = &RetailPriceType AND ХарактеристикаНоменклатуры = ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка)) AS GeneralRetailPrices
                 ON GeneralRetailPrices.Номенклатура = MainTable.Ссылка
             LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура В (&ProductRefs) AND ТипЦен = &WholesalePriceType AND ХарактеристикаНоменклатуры = ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка)) AS GeneralWholesalePrices
                 ON GeneralWholesalePrices.Номенклатура = MainTable.Ссылка
+            LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура В (&ProductRefs) AND ТипЦен = &PurchasePriceType AND ХарактеристикаНоменклатуры = ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка)) AS GeneralPurchasePrices
+                ON GeneralPurchasePrices.Номенклатура = MainTable.Ссылка
             LEFT JOIN РегистрНакопления.ТоварыНаСкладах.Остатки(&CurrentDate, Номенклатура В (&ProductRefs)) AS Stocks
                 ON Stocks.Номенклатура = MainTable.Ссылка AND Stocks.ХарактеристикаНоменклатуры = ISNULL(Chars.Ссылка, ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка))
             WHERE
@@ -109,11 +117,13 @@ class NomenclatureManager:
 
         c_retailPtRef = self.c_connection.get_price_type_ref("Розничная")
         c_wholesalePtRef = self.c_connection.get_price_type_ref("Оптовая")
+        c_purchasePtRef = self.c_connection.get_price_type_ref("Закупочная")
         c_currDate = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
 
         c_charQuery.SetParameter("ProductRefs", c_productRefsV8)
         c_charQuery.SetParameter("RetailPriceType", c_retailPtRef)
         c_charQuery.SetParameter("WholesalePriceType", c_wholesalePtRef)
+        c_charQuery.SetParameter("PurchasePriceType", c_purchasePtRef)
         c_charQuery.SetParameter("CurrentDate", c_currDate)
 
         d_batchData = {} # {product_uuid: {char_name: data}}
@@ -130,6 +140,7 @@ class NomenclatureManager:
                     n_qty = c_charSel.Quantity
                     n_retailP = float(c_charSel.RetailPrice)
                     n_wholesaleP = float(c_charSel.WholesalePrice)
+                    n_purchaseP = float(c_charSel.PurchasePrice)
 
                     if s_productUuid not in d_batchData:
                         d_batchData[s_productUuid] = {}
@@ -139,6 +150,7 @@ class NomenclatureManager:
                             "ref": c_charRef,
                             "retail": n_retailP,
                             "wholesale": n_wholesaleP,
+                            "purchase": n_purchaseP,
                             "stocks": {}
                         }
                     
@@ -197,6 +209,7 @@ class NomenclatureManager:
         """Fetches details (prices, stock, characteristics) for a single Nomenclature."""
         c_retailPtRef = self.c_connection.get_price_type_ref("Розничная")
         c_wholesalePtRef = self.c_connection.get_price_type_ref("Оптовая")
+        c_purchasePtRef = self.c_connection.get_price_type_ref("Закупочная")
         c_currDate = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
 
         c_charQuery = self.c_v8.NewObject("Query")
@@ -213,6 +226,10 @@ class NomenclatureManager:
                     КОГДА ISNULL(WholesalePrices.Цена, 0) > 0 ТОГДА WholesalePrices.Цена 
                     ИНАЧЕ ISNULL(GeneralWholesalePrices.Цена, 0) 
                 КОНЕЦ AS WholesalePrice,
+                ВЫБОР 
+                    КОГДА ISNULL(PurchasePrices.Цена, 0) > 0 ТОГДА PurchasePrices.Цена 
+                    ИНАЧЕ ISNULL(GeneralPurchasePrices.Цена, 0) 
+                КОНЕЦ AS PurchasePrice,
                 ISNULL(Stocks.КоличествоОстаток, 0) AS Quantity
             FROM (SELECT &ProductRef AS Номенклатура) AS MainTable
             LEFT JOIN Справочник.ХарактеристикиНоменклатуры AS Chars
@@ -221,9 +238,13 @@ class NomenclatureManager:
                 ON RetailPrices.ХарактеристикаНоменклатуры = Chars.Ссылка
             LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура = &ProductRef AND ТипЦен = &WholesalePriceType) AS WholesalePrices
                 ON WholesalePrices.ХарактеристикаНоменклатуры = Chars.Ссылка
+            LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура = &ProductRef AND ТипЦен = &PurchasePriceType) AS PurchasePrices
+                ON PurchasePrices.ХарактеристикаНоменклатуры = Chars.Ссылка
             LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура = &ProductRef AND ТипЦен = &RetailPriceType AND ХарактеристикаНоменклатуры = ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка)) AS GeneralRetailPrices
                 ON ИСТИНА
             LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура = &ProductRef AND ТипЦен = &WholesalePriceType AND ХарактеристикаНоменклатуры = ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка)) AS GeneralWholesalePrices
+                ON ИСТИНА
+            LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура = &ProductRef AND ТипЦен = &PurchasePriceType AND ХарактеристикаНоменклатуры = ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка)) AS GeneralPurchasePrices
                 ON ИСТИНА
             LEFT JOIN РегистрНакопления.ТоварыНаСкладах.Остатки(&CurrentDate, Номенклатура = &ProductRef) AS Stocks
                 ON Stocks.ХарактеристикаНоменклатуры = ISNULL(Chars.Ссылка, ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка))
@@ -235,6 +256,7 @@ class NomenclatureManager:
         c_charQuery.SetParameter("ProductRef", c_productRefIn)
         c_charQuery.SetParameter("RetailPriceType", c_retailPtRef)
         c_charQuery.SetParameter("WholesalePriceType", c_wholesalePtRef)
+        c_charQuery.SetParameter("PurchasePriceType", c_purchasePtRef)
         c_charQuery.SetParameter("CurrentDate", c_currDate)
 
         try:
@@ -255,12 +277,14 @@ class NomenclatureManager:
                     n_qty = c_charSel.Quantity
                     n_retailPrice = float(c_charSel.RetailPrice)
                     n_wholesalePrice = float(c_charSel.WholesalePrice)
+                    n_purchasePrice = float(c_charSel.PurchasePrice)
 
                     if s_charName not in d_tempData:
                         d_tempData[s_charName] = {
                             "ref": c_charRef,
                             "retail": n_retailPrice,
                             "wholesale": n_wholesalePrice,
+                            "purchase": n_purchasePrice,
                             "stocks": {}
                         }
 
@@ -283,9 +307,10 @@ class NomenclatureManager:
             l_varieties.append(self.c_connection.characteristics.get_variety(
                 c_charRefIn=d_data["ref"],
                 s_charNameIn=s_charName,
-                n_priceIn=d_data["retail"],
+                n_priceRetailIn=d_data["retail"],
                 n_priceOptIn=d_data["wholesale"],
-                d_stocksIn=d_data["stocks"]
+                d_stocksIn=d_data["stocks"],
+                n_pricePurchaseIn=d_data.get("purchase", 0.0)
             ))
 
         return structures.Nomenclature(
@@ -456,10 +481,11 @@ class NomenclatureManager:
                         l_characteristics = self.c_connection.characteristics.parse_name(s_charName)
 
                     l_varieties.append(structures.Variety(
-                        n_priceIn=d_data["retail"],
+                        n_priceRetailIn=d_data["retail"],
                         n_priceOptIn=d_data["wholesale"],
                         d_countIn=d_data["stocks"],
-                        l_characteristicsIn=l_characteristics
+                        l_characteristicsIn=l_characteristics,
+                        n_pricePurchaseIn=d_data.get("purchase", 0.0)
                     ))
 
                 if l_varieties:

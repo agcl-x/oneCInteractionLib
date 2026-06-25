@@ -26,13 +26,15 @@ class Nomenclature:
 class Variety:
     def __init__(
         self,
-        n_priceIn: float,
+        n_priceRetailIn: float,
         n_priceOptIn: float,
         d_countIn: dict,
-        l_characteristicsIn: list
+        l_characteristicsIn: list,
+        n_pricePurchaseIn: float = 0.0
     ):
-        self.n_price = n_priceIn
+        self.n_priceRetail = n_priceRetailIn
         self.n_priceOpt = n_priceOptIn
+        self.n_pricePurchase = n_pricePurchaseIn
         self.d_count = d_countIn
         self.l_characteristics = l_characteristicsIn
 

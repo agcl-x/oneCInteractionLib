@@ -57,14 +57,23 @@ class CharacteristicsManager:
         
         return l_characteristics
 
-    def get_variety(self, c_charRefIn, s_charNameIn: str, n_priceIn: float, n_priceOptIn: float, d_stocksIn: dict):
+    def get_variety(
+        self,
+        c_charRefIn,
+        s_charNameIn: str,
+        n_priceRetailIn: float,
+        n_priceOptIn: float,
+        d_stocksIn: dict,
+        n_pricePurchaseIn: float = 0.0
+    ):
         """Creates a Variety object with its characteristics and stock counts."""
         l_characteristics = self.get(c_charRefIn, s_charNameIn)
         return structures.Variety(
-            n_priceIn=n_priceIn,
+            n_priceRetailIn=n_priceRetailIn,
             n_priceOptIn=n_priceOptIn,
             d_countIn=d_stocksIn,
-            l_characteristicsIn=l_characteristics
+            l_characteristicsIn=l_characteristics,
+            n_pricePurchaseIn=n_pricePurchaseIn
         )
 
     def fetch_batch(self, l_charRefsIn: list) -> dict:
