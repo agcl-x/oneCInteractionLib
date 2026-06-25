@@ -16,9 +16,9 @@ A modular Python library for interacting with «1C:Enterprise» databases via a 
 
 This library requires a Windows operating system with the 1C:Enterprise 8.3 platform installed and the `pywin32` package.
 
-Install the package in local editable mode:
+Install the package:
 ```bash
-pip install -e .
+pip install oneCInteraction.
 ```
 
 ---
