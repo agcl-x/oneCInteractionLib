@@ -1,15 +1,7 @@
-import sys
 import pythoncom
 import pytz
-from .log import log_sys
-
-# Handle path for win32com on local environments
-PYWIN32_PATH = r'C:\Users\Администратор\AppData\Local\Programs\Python\Python314\Lib\site-packages\pywin32_system32'
-if PYWIN32_PATH not in sys.path:
-    sys.path.append(PYWIN32_PATH)
-
 import win32com.client
-
+from .log import log_sys
 from .nomenclature import NomenclatureManager
 from .groups import GroupsManager
 from .orders import OrdersManager
