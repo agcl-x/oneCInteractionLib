@@ -13,7 +13,7 @@ else:
     project_root = os.getcwd()
 
 # LOGS_DIR is resolved relative to the importing project
-LOGS_DIR = os.path.join(project_root, 'log')
+LOGS_DIR = os.path.join(project_root, 'logs')
 
 def log_sys(message, errorFlag = 0, user_id = None):
     folder_path = os.path.join(LOGS_DIR, 'system')
