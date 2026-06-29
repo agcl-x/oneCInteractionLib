@@ -86,5 +86,5 @@ class Connection:
         """Closes the COM connection and uninitializes PythonCOM."""
         log_sys("Closing 1C connection...")
         self.c_v8 = None
-        pythoncom.CoUninitialize()
+        #pythoncom.CoUninitialize()
         log_sys("1C connection closed successfully.")
