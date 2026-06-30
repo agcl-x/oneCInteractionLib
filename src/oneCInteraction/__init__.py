@@ -4,6 +4,7 @@ from .structures import (
     Variety,
     Characteristic,
     Group,
+    Category,
     Customer,
     OrderItem,
     Order
@@ -15,6 +16,7 @@ __all__ = [
     'Variety',
     'Characteristic',
     'Group',
+    'Category',
     'Customer',
     'OrderItem',
     'Order'

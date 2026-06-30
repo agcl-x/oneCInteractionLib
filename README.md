@@ -27,7 +27,8 @@ pip install oneCInteraction.
 
 The library is built on the principle of composition: the main `Connection` class initializes the COM connection and hosts specialized managers:
 - `Connection.nomenclature` (`NomenclatureManager`) — manages products and images.
-- `Connection.groups` (`GroupsManager`) — manages category hierarchy.
+- `Connection.groups` (`GroupsManager`) — manages group hierarchy.
+- `Connection.categories` (`CategoriesManager`) — manages nomenclature categories.
 - `Connection.characteristics` (`CharacteristicsManager`) — reads properties of product variants.
 - `Connection.orders` (`OrdersManager`) — handles creation and updates of customer orders.
 
@@ -97,6 +98,14 @@ A product group (category).
 - `s_code` (str): 1C group code.
 - `s_uuid` (str): UUID of the group in 1C.
 
+#### `Category`
+Represents a nomenclature category (e.g. `ВидНоменклатуры` / `КатегорияНоменклатуры`).
+- `s_name` (str): Category name.
+- `l_nomenclatures` (list of `Nomenclature`): List of products inside the category.
+- `c_ref`: COM reference to the category in 1C.
+- `s_code` (str): 1C category code.
+- `s_uuid` (str): UUID of the category in 1C.
+
 #### `Customer`
 Information about the buyer.
 - `s_customerTelegramId` (str): Telegram ID of the user.
@@ -132,6 +141,8 @@ Defined in [nomenclature.py](file:///c:/Users/agcl/PycharmProjects/oneCInteracti
   Downloads all attached images for a product from 1C. Saves them in the specified directory `s_imageDirIn` (defaults to `data/images`). Returns a list of the saved filenames (e.g., `["[uuid]_0.jpg"]`).
 - `get_by_group(c_groupRefIn) -> list`
   Batch fetches all products within a specific 1C group. Using optimized COM queries, this method minimizes DB requests and operates significantly faster than calling `get()` sequentially in a loop.
+- `get_by_category(c_categoryIn, s_attributeNameIn: str = "ВидНоменклатуры", s_catalogNameIn: str = "ВидыНоменклатуры") -> list`
+  Batch fetches all products within a specific 1C category (by default using the `ВидНоменклатуры` attribute in the `ВидыНоменклатуры` catalog). `c_categoryIn` can be a COM reference object or a string representing the category name.
 
 ---
 
@@ -147,7 +158,17 @@ Defined in [groups.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/
 
 ---
 
-### 5. Characteristics Manager `CharacteristicsManager` (`Connection.characteristics`)
+### 5. Categories Manager `CategoriesManager` (`Connection.categories`)
+Defined in [categories.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/categories.py).
+
+- `get(s_codeIn: str = "", s_nameIn: str = "") -> Category | None`
+  Finds a single Category by its code or name in the `ВидыНоменклатуры` catalog.
+- `create(s_nameIn: str) -> Category | None`
+  Creates a new Category with the specified name in `Справочник.ВидыНоменклатуры` and returns it.
+
+---
+
+### 6. Characteristics Manager `CharacteristicsManager` (`Connection.characteristics`)
 Defined in [characteristics.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/characteristics.py).
 
 - `parse_name(s_charNameIn: str) -> list` *(static method)*
@@ -159,7 +180,7 @@ Defined in [characteristics.py](file:///c:/Users/agcl/PycharmProjects/oneCIntera
 
 ---
 
-### 6. Orders Manager `OrdersManager` (`Connection.orders`)
+### 7. Orders Manager `OrdersManager` (`Connection.orders`)
 Defined in [orders.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/orders.py).
 
 - `push(c_orderObjIn: Order) -> str`
@@ -179,7 +200,7 @@ Defined in [orders.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/
 
 ---
 
-### 7. Logging (`log.py`)
+### 8. Logging (`log.py`)
 Defined in [log.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/log.py).
 
 All actions are logged automatically. The library resolves the root directory of the project that imported it and stores log files in the relative path `log/system/[calling_module_name].log`.

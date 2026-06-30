@@ -11,52 +11,69 @@ class NomenclatureManager:
     def c_v8(self):
         return self.c_connection.c_v8
 
-    def get(self, s_articleIn: str = "", s_nameIn: str = "", s_codeIn: str = ""):
+    def get(self, s_articleIn: str = "", s_nameIn: str = "", s_codeIn: str = "") -> structures.Nomenclature | None:
         """Retrieves details of a single Nomenclature item by its article, name, or code."""
         if not self.c_v8:
             log_sys("Failed to get Nomenclature: No connection to 1C. Returning None", 1)
             return None
 
-        log_sys("Trying to get Nomenclature...")
-        c_query = self.c_v8.NewObject("Query")
-        c_query.Text = """
-            SELECT TOP 1 
-                Ref, 
-                Наименование AS Name, 
-                Код AS Code,
-                Артикул AS Article, 
-                ISNULL(ДополнительноеОписаниеНоменклатуры, "") AS FullDescription,
-                ISNULL(НаименованиеПолное, "") AS FullName,
-                ISNULL(ЕдиницаХраненияОстатков.Наименование, "шт.") AS Unit
-            FROM Catalog.Номенклатура
-            WHERE Код = &Code OR Артикул = &Article OR Наименование = &Name
-        """
-        c_query.SetParameter("Code", s_codeIn)
-        c_query.SetParameter("Article", s_articleIn)
-        c_query.SetParameter("Name", s_nameIn)
-
-        c_result = c_query.Execute()
-        if c_result is None or c_result.IsEmpty():
-            log_sys("Nomenclature not found. Returning None", 1)
+        if len(s_articleIn) == 0 and len(s_nameIn) == 0 and len(s_codeIn) == 0:
+            log_sys("Failed to get Nomenclature: No search criteria provided. Returning None", 1)
             return None
 
-        c_selection = c_result.Select()
-        c_selection.Next()
-        
-        s_description = self.c_v8.String(c_selection.FullDescription)
-        if not s_description:
-            s_description = self.c_v8.String(c_selection.FullName)
+        try:
+            log_sys(f"Trying to get Nomenclature (article: '{s_articleIn}', name: '{s_nameIn}', code: '{s_codeIn}')...")
+            c_query = self.c_v8.NewObject("Query")
+            
+            where_clauses = []
+            if s_codeIn:
+                where_clauses.append("Код = &Code")
+                c_query.SetParameter("Code", s_codeIn)
+            if s_articleIn:
+                where_clauses.append("Артикул = &Article")
+                c_query.SetParameter("Article", s_articleIn)
+            if s_nameIn:
+                where_clauses.append("Наименование = &Name")
+                c_query.SetParameter("Name", s_nameIn)
 
-        log_sys(f"Nomenclature found: Name='{c_selection.Name}', Article='{c_selection.Article}'")
-        return self._fetch_details(
-            c_selection.Ref, 
-            c_selection.Name, 
-            c_selection.Article, 
-            s_description,
-            getattr(c_selection, "Unit", "шт."),
-            self.c_v8.String(c_selection.Ref.UUID()),
-            self.c_v8.String(c_selection.Code)
-        )
+            c_query.Text = f"""
+                SELECT TOP 1 
+                    Ссылка AS Ref, 
+                    Наименование AS Name, 
+                    Код AS Code,
+                    Артикул AS Article, 
+                    ISNULL(ДополнительноеОписаниеНоменклатуры, "") AS FullDescription,
+                    ISNULL(НаименованиеПолное, "") AS FullName,
+                    ISNULL(ЕдиницаХраненияОстатков.Наименование, "шт.") AS Unit
+                FROM Справочник.Номенклатура
+                WHERE ({" OR ".join(where_clauses)}) AND ЭтоГруппа = ЛОЖЬ AND ПометкаУдаления = ЛОЖЬ
+            """
+
+            c_result = c_query.Execute()
+            if c_result is None or c_result.IsEmpty():
+                log_sys(f"Nomenclature (article: '{s_articleIn}', name: '{s_nameIn}', code: '{s_codeIn}') not found. Returning None", 1)
+                return None
+
+            c_selection = c_result.Select()
+            c_selection.Next()
+            
+            s_description = self.c_v8.String(c_selection.FullDescription)
+            if not s_description:
+                s_description = self.c_v8.String(c_selection.FullName)
+
+            log_sys(f"Nomenclature found: Name='{c_selection.Name}', Article='{c_selection.Article}'")
+            return self._fetch_details(
+                c_selection.Ref, 
+                c_selection.Name, 
+                c_selection.Article, 
+                s_description,
+                getattr(c_selection, "Unit", "шт."),
+                self.c_v8.String(c_selection.Ref.UUID()),
+                self.c_v8.String(c_selection.Code)
+            )
+        except Exception as e:
+            log_sys(f"Error in NomenclatureManager.get: {e}", 1)
+            return None
 
     def _fetch_batch_details(self, l_productRefsIn: list) -> dict:
         """Batch fetches prices and stock quantities for a list of product references."""
@@ -501,7 +518,148 @@ class NomenclatureManager:
 
             log_sys(f"Successfully processed {len(l_nomenclatures)} items in batch mode.")
             return l_nomenclatures
-
         except Exception as e:
             log_sys(f"Error in getNomenclaturesByGroup (batch): {e}", 1)
+            return []
+
+    def get_by_category(self, c_categoryIn, s_attributeNameIn: str = "ВидНоменклатуры", s_catalogNameIn: str = "ВидыНоменклатуры") -> list:
+        """Retrieves and processes all Nomenclature items belonging to a given category.
+
+        c_categoryIn can be a COM reference object or a string representing the category name.
+        s_attributeNameIn is the name of the attribute in Справочник.Номенклатура (default: "ВидНоменклатуры").
+        s_catalogNameIn is the catalog name where the category is stored if c_categoryIn is a string (default: "ВидыНоменклатуры").
+        """
+        if not self.c_v8:
+            log_sys("Failed to get Nomenclatures by category: No connection to 1C.", 1)
+            return []
+
+        try:
+            # Resolve category reference if it was passed as string name
+            if isinstance(c_categoryIn, str):
+                log_sys(f"Finding category reference by name '{c_categoryIn}' in Справочник.{s_catalogNameIn}...")
+                c_queryCat = self.c_v8.NewObject("Query")
+                c_queryCat.Text = f"""
+                    SELECT TOP 1 Ссылка AS Ref
+                    FROM Справочник.{s_catalogNameIn}
+                    WHERE Наименование = &Name AND ПометкаУдаления = ЛОЖЬ
+                """
+                c_queryCat.SetParameter("Name", c_categoryIn)
+                c_resCat = c_queryCat.Execute()
+                if c_resCat.IsEmpty():
+                    log_sys(f"Category '{c_categoryIn}' not found in Справочник.{s_catalogNameIn}. Returning empty list.", 1)
+                    return []
+                c_selCat = c_resCat.Select()
+                c_selCat.Next()
+                c_categoryRef = c_selCat.Ref
+            else:
+                c_categoryRef = c_categoryIn
+
+            s_catName = self.c_v8.String(c_categoryRef)
+            log_sys(f"Fetching nomenclature for category: {s_catName} (BATCH MODE)")
+            
+            c_query = self.c_v8.NewObject("Query")
+            c_query.Text = f"""
+                SELECT Ссылка AS Ref,
+                       Наименование AS Name,
+                       Код AS Code,
+                       Артикул AS Article,
+                       ЭтоГруппа AS IsFolder,
+                       ISNULL(ДополнительноеОписаниеНоменклатуры, "") AS FullDescription,
+                       ISNULL(НаименованиеПолное, "") AS FullName,
+                       ISNULL(ЕдиницаХраненияОстатков.Наименование, "шт.") AS Unit
+                FROM Справочник.Номенклатура
+                WHERE {s_attributeNameIn} = &CategoryRef AND ЭтоГруппа = ЛОЖЬ AND ПометкаУдаления = ЛОЖЬ
+            """
+            c_query.SetParameter("CategoryRef", c_categoryRef)
+
+            c_result = c_query.Execute()
+            if c_result.IsEmpty():
+                log_sys(f"No nomenclature items found in category {s_catName}")
+                return []
+
+            # 1. Gather basic info
+            l_itemsBasicInfo = []
+            l_productRefs = []
+            
+            c_selection = c_result.Select()
+            while c_selection.Next():
+                if c_selection.IsFolder:
+                    continue
+                
+                c_productRef = c_selection.Ref
+                s_productUuid = self.c_v8.String(c_productRef.UUID())
+                
+                s_description = self.c_v8.String(c_selection.FullDescription)
+                if not s_description:
+                    s_description = self.c_v8.String(c_selection.FullName)
+                
+                l_itemsBasicInfo.append({
+                    "ref": c_productRef,
+                    "uuid": s_productUuid,
+                    "name": c_selection.Name,
+                    "code": int(self.c_v8.String(c_selection.Code)),
+                    "article": c_selection.Article,
+                    "description": s_description,
+                    "unit": getattr(c_selection, "Unit", "шт.")
+                })
+                l_productRefs.append(c_productRef)
+
+            if not l_itemsBasicInfo:
+                return []
+
+            # 2. Batch fetch details (prices and stocks)
+            d_batchDetails = self._fetch_batch_details(l_productRefs)
+            
+            # 3. Batch fetch characteristics
+            l_allCharRefs = []
+            for s_productUuid in d_batchDetails:
+                for s_charName in d_batchDetails[s_productUuid]:
+                    c_charRef = d_batchDetails[s_productUuid][s_charName]["ref"]
+                    if c_charRef and not c_charRef.IsEmpty():
+                        l_allCharRefs.append(c_charRef)
+            
+            d_batchChars = self.c_connection.characteristics.fetch_batch(l_allCharRefs)
+
+            # 3.5. Batch fetch image metadata
+            d_batchImages = self._fetch_batch_image_metadata(l_productRefs)
+
+            # 4. Construct final nomenclature objects
+            l_nomenclatures = []
+            for d_item in l_itemsBasicInfo:
+                s_productUuid = d_item["uuid"]
+                d_productDetails = d_batchDetails.get(s_productUuid, {})
+                
+                l_varieties = []
+                for s_charName in sorted(d_productDetails.keys()):
+                    d_data = d_productDetails[s_charName]
+                    s_charUuid = self.c_v8.String(d_data["ref"].UUID()) if d_data["ref"] and not d_data["ref"].IsEmpty() else "NULL"
+                    
+                    l_characteristics = d_batchChars.get(s_charUuid, [])
+                    if not l_characteristics:
+                        l_characteristics = self.c_connection.characteristics.parse_name(s_charName)
+
+                    l_varieties.append(structures.Variety(
+                        n_priceRetailIn=d_data["retail"],
+                        n_priceOptIn=d_data["wholesale"],
+                        d_countIn=d_data["stocks"],
+                        l_characteristicsIn=l_characteristics,
+                        n_pricePurchaseIn=d_data.get("purchase", 0.0)
+                    ))
+
+                if l_varieties:
+                    l_nomenclatures.append(structures.Nomenclature(
+                        s_nameIn=d_item["name"],
+                        s_articleIn=d_item["article"],
+                        l_varietyIn=l_varieties,
+                        s_descriptionIn=d_item["description"],
+                        s_unitIn=d_item["unit"],
+                        s_codeIn=self.c_v8.String(d_item["code"]),
+                        l_imagesIn=d_batchImages.get(s_productUuid, [])
+                    ))
+
+            log_sys(f"Successfully processed {len(l_nomenclatures)} items in batch mode.")
+            return l_nomenclatures
+
+        except Exception as e:
+            log_sys(f"Error in getNomenclaturesByCategory (batch): {e}", 1)
             return []

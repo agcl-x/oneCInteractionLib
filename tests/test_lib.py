@@ -9,7 +9,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 try:
-    from oneCInteraction import Connection, Customer, Order, OrderItem, Nomenclature, Variety, Characteristic, Group
+    from oneCInteraction import Connection, Customer, Order, OrderItem, Nomenclature, Variety, Characteristic, Group, Category
     from oneCInteraction.log import log_sys, LOGS_DIR
     
     print("Success: Imported Connection and all structures successfully from oneCInteraction!")
@@ -28,6 +28,9 @@ try:
     c_nom = Nomenclature(s_nameIn="Product 1", s_articleIn="ART001", l_varietyIn=[])
     print("Success: Nomenclature instantiated.")
     
+    c_cat = Category(s_categoryNameIn="Shoes", l_nomenclaturesIn=[c_nom])
+    print("Success: Category instantiated.")
+    
     c_conn = Connection(s_oneCDatabasePathIn="test_db", s_usernameIn="admin", s_passwordIn="pass")
     print("Success: Connection class instantiated.")
     
@@ -35,6 +38,7 @@ try:
     assert c_conn.groups is not None
     assert c_conn.orders is not None
     assert c_conn.characteristics is not None
+    assert c_conn.categories is not None
     print("Success: Checked all composition managers exist.")
     
     # Test logging functionality
