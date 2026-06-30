@@ -60,3 +60,50 @@ class CategoriesManager:
         except Exception as e:
             log_sys(f"Error in CategoriesManager.get: {e}", 1)
             return None
+
+    def create(self, s_nameIn: str) -> structures.Category | None:
+        """Creates a new Category in Справочник.ВидыНоменклатуры."""
+        if not self.c_v8:
+            log_sys("Failed to create category: No connection to 1C. Returning None", 1)
+            return None
+
+        if len(s_nameIn) == 0:
+            log_sys("Failed to create category: Name is empty. Returning None", 1)
+            return None
+
+        try:
+            # Determine the maximum description length from 1C metadata with default fallbacks
+            n_maxLength = 100  # Default fallback
+            try:
+                n_maxLength = int(self.c_v8.Metadata.Catalogs.ВидыНоменклатуры.DescriptionLength)
+            except Exception:
+                try:
+                    n_maxLength = int(self.c_v8.Метаданные.Справочники.ВидыНоменклатуры.ДлинаНаименования)
+                except Exception:
+                    pass
+
+            if len(s_nameIn) > n_maxLength:
+                log_sys(f"Warning: Category name '{s_nameIn}' exceeds maximum allowed length of {n_maxLength} characters. Truncating.", 1)
+                s_nameIn = s_nameIn[:n_maxLength]
+
+            log_sys(f"Creating new category '{s_nameIn}' in Справочник.ВидыНоменклатуры...")
+            
+            c_newCategory = self.c_v8.Catalogs.ВидыНоменклатуры.CreateItem()
+            c_newCategory.Наименование = s_nameIn
+            c_newCategory.Write()
+            
+            s_categoryCode = self.c_v8.String(c_newCategory.Код)
+            s_uuid = self.c_v8.String(c_newCategory.Ссылка.UUID())
+            
+            log_sys(f"Category '{s_nameIn}' (code: '{s_categoryCode}') successfully created.")
+            return structures.Category(
+                s_categoryNameIn=s_nameIn,
+                l_nomenclaturesIn=[],
+                c_refIn=c_newCategory.Ссылка,
+                s_codeIn=s_categoryCode,
+                s_uuidIn=s_uuid
+            )
+        except Exception as e:
+            log_sys(f"Error in CategoriesManager.create: {e}", 1)
+            return None
+

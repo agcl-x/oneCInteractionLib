@@ -27,7 +27,8 @@ pip install oneCInteraction.
 
 The library is built on the principle of composition: the main `Connection` class initializes the COM connection and hosts specialized managers:
 - `Connection.nomenclature` (`NomenclatureManager`) — manages products and images.
-- `Connection.groups` (`GroupsManager`) — manages category hierarchy.
+- `Connection.groups` (`GroupsManager`) — manages group hierarchy.
+- `Connection.categories` (`CategoriesManager`) — manages nomenclature categories.
 - `Connection.characteristics` (`CharacteristicsManager`) — reads properties of product variants.
 - `Connection.orders` (`OrdersManager`) — handles creation and updates of customer orders.
 
@@ -157,7 +158,17 @@ Defined in [groups.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/
 
 ---
 
-### 5. Characteristics Manager `CharacteristicsManager` (`Connection.characteristics`)
+### 5. Categories Manager `CategoriesManager` (`Connection.categories`)
+Defined in [categories.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/categories.py).
+
+- `get(s_codeIn: str = "", s_nameIn: str = "") -> Category | None`
+  Finds a single Category by its code or name in the `ВидыНоменклатуры` catalog.
+- `create(s_nameIn: str) -> Category | None`
+  Creates a new Category with the specified name in `Справочник.ВидыНоменклатуры` and returns it.
+
+---
+
+### 6. Characteristics Manager `CharacteristicsManager` (`Connection.characteristics`)
 Defined in [characteristics.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/characteristics.py).
 
 - `parse_name(s_charNameIn: str) -> list` *(static method)*
@@ -169,7 +180,7 @@ Defined in [characteristics.py](file:///c:/Users/agcl/PycharmProjects/oneCIntera
 
 ---
 
-### 6. Orders Manager `OrdersManager` (`Connection.orders`)
+### 7. Orders Manager `OrdersManager` (`Connection.orders`)
 Defined in [orders.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/orders.py).
 
 - `push(c_orderObjIn: Order) -> str`
@@ -189,7 +200,7 @@ Defined in [orders.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/
 
 ---
 
-### 7. Logging (`log.py`)
+### 8. Logging (`log.py`)
 Defined in [log.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/log.py).
 
 All actions are logged automatically. The library resolves the root directory of the project that imported it and stores log files in the relative path `log/system/[calling_module_name].log`.
