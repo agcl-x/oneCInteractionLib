@@ -6,6 +6,7 @@ from .nomenclature import NomenclatureManager
 from .groups import GroupsManager
 from .orders import OrdersManager
 from .characteristics import CharacteristicsManager
+from .categories import CategoriesManager
 
 class Connection:
     """Manages the COM connection to 1C and hosts managers to interact with different modules."""
@@ -34,6 +35,7 @@ class Connection:
         self.groups = GroupsManager(self)
         self.orders = OrdersManager(self)
         self.characteristics = CharacteristicsManager(self)
+        self.categories = CategoriesManager(self)
 
     def initiate_connection(self) -> None:
         """Establishes COM connection to 1C and caches price type references."""

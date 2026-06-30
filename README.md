@@ -97,6 +97,14 @@ A product group (category).
 - `s_code` (str): 1C group code.
 - `s_uuid` (str): UUID of the group in 1C.
 
+#### `Category`
+Represents a nomenclature category (e.g. `ВидНоменклатуры` / `КатегорияНоменклатуры`).
+- `s_name` (str): Category name.
+- `l_nomenclatures` (list of `Nomenclature`): List of products inside the category.
+- `c_ref`: COM reference to the category in 1C.
+- `s_code` (str): 1C category code.
+- `s_uuid` (str): UUID of the category in 1C.
+
 #### `Customer`
 Information about the buyer.
 - `s_customerTelegramId` (str): Telegram ID of the user.
@@ -132,6 +140,8 @@ Defined in [nomenclature.py](file:///c:/Users/agcl/PycharmProjects/oneCInteracti
   Downloads all attached images for a product from 1C. Saves them in the specified directory `s_imageDirIn` (defaults to `data/images`). Returns a list of the saved filenames (e.g., `["[uuid]_0.jpg"]`).
 - `get_by_group(c_groupRefIn) -> list`
   Batch fetches all products within a specific 1C group. Using optimized COM queries, this method minimizes DB requests and operates significantly faster than calling `get()` sequentially in a loop.
+- `get_by_category(c_categoryIn, s_attributeNameIn: str = "ВидНоменклатуры", s_catalogNameIn: str = "ВидыНоменклатуры") -> list`
+  Batch fetches all products within a specific 1C category (by default using the `ВидНоменклатуры` attribute in the `ВидыНоменклатуры` catalog). `c_categoryIn` can be a COM reference object or a string representing the category name.
 
 ---
 

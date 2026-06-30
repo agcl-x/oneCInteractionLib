@@ -60,6 +60,21 @@ class Group:
         self.s_code = s_codeIn
         self.s_uuid = s_uuidIn
 
+class Category:
+    def __init__(
+        self,
+        s_categoryNameIn: str,
+        l_nomenclaturesIn: list = None,
+        c_refIn = None,
+        s_codeIn: str = None,
+        s_uuidIn: str = None
+    ):
+        self.s_name = s_categoryNameIn
+        self.l_nomenclatures = l_nomenclaturesIn if l_nomenclaturesIn is not None else []
+        self.c_ref = c_refIn
+        self.s_code = s_codeIn
+        self.s_uuid = s_uuidIn
+
 class Customer:
     def __init__(
         self,
