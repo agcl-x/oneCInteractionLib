@@ -20,7 +20,7 @@ class CategoriesManager:
             return None
 
         try:
-            log_sys(f"Trying to get category (code: '{s_codeIn}', name: '{s_nameIn}') from Справочник.ВидыНоменклатуры...")
+            log_sys(f"Trying to get category (code: '{s_codeIn}', name: '{s_nameIn}') from Справочник.КатегорииНоменклатуры...")
             c_query = self.c_v8.NewObject("Query")
             
             where_clauses = []
@@ -35,7 +35,7 @@ class CategoriesManager:
                 SELECT TOP 1 Ссылка AS Ref, 
                        Наименование AS Name,
                        Код AS Code
-                FROM Справочник.ВидыНоменклатуры
+                FROM Справочник.КатегорииНоменклатуры
                 WHERE ({" OR ".join(where_clauses)}) AND ПометкаУдаления = ЛОЖЬ
             """
 
@@ -62,7 +62,7 @@ class CategoriesManager:
             return None
 
     def create(self, s_nameIn: str) -> structures.Category | None:
-        """Creates a new Category in Справочник.ВидыНоменклатуры."""
+        """Creates a new Category in Справочник.КатегорииНоменклатуры."""
         if not self.c_v8:
             log_sys("Failed to create category: No connection to 1C. Returning None", 1)
             return None
@@ -75,10 +75,10 @@ class CategoriesManager:
             # Determine the maximum description length from 1C metadata with default fallbacks
             n_maxLength = 100  # Default fallback
             try:
-                n_maxLength = int(self.c_v8.Metadata.Catalogs.ВидыНоменклатуры.DescriptionLength)
+                n_maxLength = int(self.c_v8.Metadata.Catalogs.КатегорииНоменклатуры.DescriptionLength)
             except Exception:
                 try:
-                    n_maxLength = int(self.c_v8.Метаданные.Справочники.ВидыНоменклатуры.ДлинаНаименования)
+                    n_maxLength = int(self.c_v8.Метаданные.Справочники.КатегорииНоменклатуры.ДлинаНаименования)
                 except Exception:
                     pass
 
@@ -86,9 +86,9 @@ class CategoriesManager:
                 log_sys(f"Warning: Category name '{s_nameIn}' exceeds maximum allowed length of {n_maxLength} characters. Truncating.", 1)
                 s_nameIn = s_nameIn[:n_maxLength]
 
-            log_sys(f"Creating new category '{s_nameIn}' in Справочник.ВидыНоменклатуры...")
+            log_sys(f"Creating new category '{s_nameIn}' in Справочник.КатегорииНоменклатуры...")
             
-            c_newCategory = self.c_v8.Catalogs.ВидыНоменклатуры.CreateItem()
+            c_newCategory = self.c_v8.Catalogs.КатегорииНоменклатуры.CreateItem()
             c_newCategory.Наименование = s_nameIn
             c_newCategory.Write()
             
