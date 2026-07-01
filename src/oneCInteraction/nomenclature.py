@@ -455,7 +455,7 @@ class NomenclatureManager:
                     "ref": c_productRef,
                     "uuid": s_productUuid,
                     "name": c_selection.Name,
-                    "code": int(self.c_v8.String(c_selection.Code)),
+                    "code": self.c_v8.String(c_selection.Code),
                     "article": c_selection.Article,
                     "description": s_description,
                     "unit": getattr(c_selection, "Unit", "шт.")
@@ -596,7 +596,7 @@ class NomenclatureManager:
                     "ref": c_productRef,
                     "uuid": s_productUuid,
                     "name": c_selection.Name,
-                    "code": int(self.c_v8.String(c_selection.Code)),
+                    "code": self.c_v8.String(c_selection.Code),
                     "article": c_selection.Article,
                     "description": s_description,
                     "unit": getattr(c_selection, "Unit", "шт.")
