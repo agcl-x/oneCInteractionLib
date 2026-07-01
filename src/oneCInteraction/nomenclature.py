@@ -522,12 +522,10 @@ class NomenclatureManager:
             log_sys(f"Error in getNomenclaturesByGroup (batch): {e}", 1)
             return []
 
-    def get_by_category(self, c_categoryIn, s_attributeNameIn: str = "ВидНоменклатуры", s_catalogNameIn: str = "ВидыНоменклатуры") -> list:
+    def get_by_category(self, c_categoryIn) -> list:
         """Retrieves and processes all Nomenclature items belonging to a given category.
 
         c_categoryIn can be a COM reference object or a string representing the category name.
-        s_attributeNameIn is the name of the attribute in Справочник.Номенклатура (default: "ВидНоменклатуры").
-        s_catalogNameIn is the catalog name where the category is stored if c_categoryIn is a string (default: "ВидыНоменклатуры").
         """
         if not self.c_v8:
             log_sys("Failed to get Nomenclatures by category: No connection to 1C.", 1)
@@ -536,17 +534,17 @@ class NomenclatureManager:
         try:
             # Resolve category reference if it was passed as string name
             if isinstance(c_categoryIn, str):
-                log_sys(f"Finding category reference by name '{c_categoryIn}' in Справочник.{s_catalogNameIn}...")
+                log_sys(f"Finding category reference by name '{c_categoryIn}' in Справочник. КатегорииНоменклатуры...")
                 c_queryCat = self.c_v8.NewObject("Query")
                 c_queryCat.Text = f"""
                     SELECT TOP 1 Ссылка AS Ref
-                    FROM Справочник.{s_catalogNameIn}
+                    FROM Справочник.КатегорииНоменклатуры
                     WHERE Наименование = &Name AND ПометкаУдаления = ЛОЖЬ
                 """
                 c_queryCat.SetParameter("Name", c_categoryIn)
                 c_resCat = c_queryCat.Execute()
                 if c_resCat.IsEmpty():
-                    log_sys(f"Category '{c_categoryIn}' not found in Справочник.{s_catalogNameIn}. Returning empty list.", 1)
+                    log_sys(f"Category '{c_categoryIn}' not found in Справочник.КатегорииНоменклатуры. Returning empty list.", 1)
                     return []
                 c_selCat = c_resCat.Select()
                 c_selCat.Next()
@@ -568,7 +566,7 @@ class NomenclatureManager:
                        ISNULL(НаименованиеПолное, "") AS FullName,
                        ISNULL(ЕдиницаХраненияОстатков.Наименование, "шт.") AS Unit
                 FROM Справочник.Номенклатура
-                WHERE {s_attributeNameIn} = &CategoryRef AND ЭтоГруппа = ЛОЖЬ AND ПометкаУдаления = ЛОЖЬ
+                WHERE КатегорияНоменклатуры = &CategoryRef AND ЭтоГруппа = ЛОЖЬ AND ПометкаУдаления = ЛОЖЬ
             """
             c_query.SetParameter("CategoryRef", c_categoryRef)
 
