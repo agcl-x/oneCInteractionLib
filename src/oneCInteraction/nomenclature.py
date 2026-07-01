@@ -305,7 +305,6 @@ class NomenclatureManager:
                             "stocks": {}
                         }
 
-                    # Even if stock is 0, we preserve the price details
                     if s_warehouseName != "Невідомий склад" or n_qty != 0:
                         d_tempData[s_charName]["stocks"][s_warehouseName] = n_qty
                         
@@ -374,7 +373,7 @@ class NomenclatureManager:
             except Exception as e:
                 log_sys(f"Error fetching image references for {c_productObjIn.s_code}: {e}", 1)
 
-        # Check local cache and download missing files
+
         for idx, s_rawUuid in enumerate(l_imageUuids):
             s_cleanUuid = s_rawUuid.replace('{', '').replace('}', '').replace('-', '')
             s_fileName = f"{s_cleanUuid}_{idx}.jpg"
@@ -436,7 +435,7 @@ class NomenclatureManager:
                 log_sys(f"No nomenclature items found in group {s_gName}")
                 return []
 
-            # 1. Gather basic info
+
             l_itemsBasicInfo = []
             l_productRefs = []
             
@@ -466,10 +465,10 @@ class NomenclatureManager:
             if not l_itemsBasicInfo:
                 return []
 
-            # 2. Batch fetch details (prices and stocks)
+
             d_batchDetails = self._fetch_batch_details(l_productRefs)
             
-            # 3. Batch fetch characteristics
+
             l_allCharRefs = []
             for s_productUuid in d_batchDetails:
                 for s_charName in d_batchDetails[s_productUuid]:
@@ -479,10 +478,10 @@ class NomenclatureManager:
             
             d_batchChars = self.c_connection.characteristics.fetch_batch(l_allCharRefs)
 
-            # 3.5. Batch fetch image metadata
+
             d_batchImages = self._fetch_batch_image_metadata(l_productRefs)
 
-            # 4. Construct final nomenclature objects
+
             l_nomenclatures = []
             for d_item in l_itemsBasicInfo:
                 s_productUuid = d_item["uuid"]
@@ -532,19 +531,18 @@ class NomenclatureManager:
             return []
 
         try:
-            # Resolve category reference if it was passed as string name
             if isinstance(c_categoryIn, str):
-                log_sys(f"Finding category reference by name '{c_categoryIn}' in Справочник. КатегорииНоменклатуры...")
+                log_sys(f"Finding category reference by name '{c_categoryIn}' in Справочник. КатегорииОбъектов...")
                 c_queryCat = self.c_v8.NewObject("Query")
                 c_queryCat.Text = f"""
                     SELECT TOP 1 Ссылка AS Ref
-                    FROM Справочник.КатегорииНоменклатуры
+                    FROM Справочник.КатегорииОбъектов
                     WHERE Наименование = &Name AND ПометкаУдаления = ЛОЖЬ
                 """
                 c_queryCat.SetParameter("Name", c_categoryIn)
                 c_resCat = c_queryCat.Execute()
                 if c_resCat.IsEmpty():
-                    log_sys(f"Category '{c_categoryIn}' not found in Справочник.КатегорииНоменклатуры. Returning empty list.", 1)
+                    log_sys(f"Category '{c_categoryIn}' not found in Справочник.КатегорииОбъектов. Returning empty list.", 1)
                     return []
                 c_selCat = c_resCat.Select()
                 c_selCat.Next()
@@ -554,20 +552,24 @@ class NomenclatureManager:
 
             s_catName = self.c_v8.String(c_categoryRef)
             log_sys(f"Fetching nomenclature for category: {s_catName} (BATCH MODE)")
-            
+
             c_query = self.c_v8.NewObject("Query")
             c_query.Text = f"""
-                SELECT Ссылка AS Ref,
-                       Наименование AS Name,
-                       Код AS Code,
-                       Артикул AS Article,
-                       ЭтоГруппа AS IsFolder,
-                       ISNULL(ДополнительноеОписаниеНоменклатуры, "") AS FullDescription,
-                       ISNULL(НаименованиеПолное, "") AS FullName,
-                       ISNULL(ЕдиницаХраненияОстатков.Наименование, "шт.") AS Unit
-                FROM Справочник.Номенклатура
-                WHERE КатегорияНоменклатуры = &CategoryRef AND ЭтоГруппа = ЛОЖЬ AND ПометкаУдаления = ЛОЖЬ
-            """
+                            SELECT Номенклатура.Ссылка AS Ref,
+                                   Номенклатура.Наименование AS Name,
+                                   Номенклатура.Код AS Code,
+                                   Номенклатура.Артикул AS Article,
+                                   Номенклатура.ЭтоГруппа AS IsFolder,
+                                   ISNULL(Номенклатура.ДополнительноеОписаниеНоменклатуры, "") AS FullDescription,
+                                   ISNULL(Номенклатура.НаименованиеПолное, "") AS FullName,
+                                   ISNULL(Номенклатура.ЕдиницаХраненияОстатков.Наименование, "шт.") AS Unit
+                            FROM Справочник.Номенклатура AS Номенклатура
+                            INNER JOIN РегистрСведений.КатегорииОбъектов AS КатегорииОбъектов
+                                ON Номенклатура.Ссылка = КатегорииОбъектов.Объект
+                            WHERE КатегорииОбъектов.Категория = &CategoryRef 
+                              AND Номенклатура.ЭтоГруппа = ЛОЖЬ 
+                              AND Номенклатура.ПометкаУдаления = ЛОЖЬ
+                        """
             c_query.SetParameter("CategoryRef", c_categoryRef)
 
             c_result = c_query.Execute()
@@ -575,7 +577,6 @@ class NomenclatureManager:
                 log_sys(f"No nomenclature items found in category {s_catName}")
                 return []
 
-            # 1. Gather basic info
             l_itemsBasicInfo = []
             l_productRefs = []
             
@@ -605,10 +606,10 @@ class NomenclatureManager:
             if not l_itemsBasicInfo:
                 return []
 
-            # 2. Batch fetch details (prices and stocks)
+
             d_batchDetails = self._fetch_batch_details(l_productRefs)
             
-            # 3. Batch fetch characteristics
+
             l_allCharRefs = []
             for s_productUuid in d_batchDetails:
                 for s_charName in d_batchDetails[s_productUuid]:
@@ -618,10 +619,10 @@ class NomenclatureManager:
             
             d_batchChars = self.c_connection.characteristics.fetch_batch(l_allCharRefs)
 
-            # 3.5. Batch fetch image metadata
+
             d_batchImages = self._fetch_batch_image_metadata(l_productRefs)
 
-            # 4. Construct final nomenclature objects
+
             l_nomenclatures = []
             for d_item in l_itemsBasicInfo:
                 s_productUuid = d_item["uuid"]
