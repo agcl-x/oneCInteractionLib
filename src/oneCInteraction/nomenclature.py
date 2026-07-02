@@ -75,6 +75,134 @@ class NomenclatureManager:
             log_sys(f"Error in NomenclatureManager.get: {e}", 1)
             return None
 
+    def search(self, s_queryIn: str, s_searchByIn: str = "all") -> list:
+        """Searches for Nomenclature items by a query string matching name, article, code, or all."""
+        if not self.c_v8:
+            log_sys("Failed to search Nomenclature: No connection to 1C. Returning empty list", 1)
+            return []
+
+        if not s_queryIn or not s_queryIn.strip():
+            log_sys("Failed to search Nomenclature: Empty search query. Returning empty list", 1)
+            return []
+
+        try:
+            s_query_stripped = s_queryIn.strip()
+            log_sys(f"Searching nomenclature by query: '{s_query_stripped}', search_by: '{s_searchByIn}'")
+            
+            c_query = self.c_v8.NewObject("Query")
+            
+            s_search_by = s_searchByIn.lower().strip()
+            if s_search_by == "name":
+                s_where = "Наименование ПОДОБНО &SearchPattern"
+            elif s_search_by == "article":
+                s_where = "Артикул ПОДОБНО &SearchPattern"
+            elif s_search_by == "code":
+                s_where = "Код ПОДОБНО &SearchPattern"
+            else:
+                s_where = "(Наименование ПОДОБНО &SearchPattern OR Артикул ПОДОБНО &SearchPattern OR Код ПОДОБНО &SearchPattern)"
+
+            c_query.Text = f"""
+                SELECT Ссылка AS Ref,
+                       Наименование AS Name,
+                       Код AS Code,
+                       Артикул AS Article,
+                       ЭтоГруппа AS IsFolder,
+                       ISNULL(ДополнительноеОписаниеНоменклатуры, "") AS FullDescription,
+                       ISNULL(НаименованиеПолное, "") AS FullName,
+                       ISNULL(ЕдиницаХраненияОстатков.Наименование, "шт.") AS Unit
+                FROM Справочник.Номенклатура
+                WHERE ({s_where})
+                  AND ЭтоГруппа = ЛОЖЬ 
+                  AND ПометкаУдаления = ЛОЖЬ
+            """
+            c_query.SetParameter("SearchPattern", f"%{s_query_stripped}%")
+
+            c_result = c_query.Execute()
+            if c_result is None or c_result.IsEmpty():
+                log_sys(f"No nomenclature items found for query '{s_query_stripped}' (search_by: '{s_searchByIn}')")
+                return []
+
+            l_itemsBasicInfo = []
+            l_productRefs = []
+            
+            c_selection = c_result.Select()
+            while c_selection.Next():
+                if c_selection.IsFolder:
+                    continue
+                
+                c_productRef = c_selection.Ref
+                s_productUuid = self.c_v8.String(c_productRef.UUID())
+                
+                s_description = self.c_v8.String(c_selection.FullDescription)
+                if not s_description:
+                    s_description = self.c_v8.String(c_selection.FullName)
+                
+                l_itemsBasicInfo.append({
+                    "ref": c_productRef,
+                    "uuid": s_productUuid,
+                    "name": c_selection.Name,
+                    "code": self.c_v8.String(c_selection.Code),
+                    "article": c_selection.Article,
+                    "description": s_description,
+                    "unit": getattr(c_selection, "Unit", "шт.")
+                })
+                l_productRefs.append(c_productRef)
+
+            if not l_itemsBasicInfo:
+                return []
+
+            d_batchDetails = self._fetch_batch_details(l_productRefs)
+            
+            l_allCharRefs = []
+            for s_productUuid in d_batchDetails:
+                for s_charName in d_batchDetails[s_productUuid]:
+                    c_charRef = d_batchDetails[s_productUuid][s_charName]["ref"]
+                    if c_charRef and not c_charRef.IsEmpty():
+                        l_allCharRefs.append(c_charRef)
+            
+            d_batchChars = self.c_connection.characteristics.fetch_batch(l_allCharRefs)
+            d_batchImages = self._fetch_batch_image_metadata(l_productRefs)
+
+            l_nomenclatures = []
+            for d_item in l_itemsBasicInfo:
+                s_productUuid = d_item["uuid"]
+                d_productDetails = d_batchDetails.get(s_productUuid, {})
+                
+                l_varieties = []
+                for s_charName in sorted(d_productDetails.keys()):
+                    d_data = d_productDetails[s_charName]
+                    s_charUuid = self.c_v8.String(d_data["ref"].UUID()) if d_data["ref"] and not d_data["ref"].IsEmpty() else "NULL"
+                    
+                    l_characteristics = d_batchChars.get(s_charUuid, [])
+                    if not l_characteristics:
+                        l_characteristics = self.c_connection.characteristics.parse_name(s_charName)
+
+                    l_varieties.append(structures.Variety(
+                        n_priceRetailIn=d_data["retail"],
+                        n_priceOptIn=d_data["wholesale"],
+                        d_countIn=d_data["stocks"],
+                        l_characteristicsIn=l_characteristics,
+                        n_pricePurchaseIn=d_data.get("purchase", 0.0)
+                    ))
+
+                if l_varieties:
+                    l_nomenclatures.append(structures.Nomenclature(
+                        s_nameIn=d_item["name"],
+                        s_articleIn=d_item["article"],
+                        l_varietyIn=l_varieties,
+                        s_descriptionIn=d_item["description"],
+                        s_unitIn=d_item["unit"],
+                        s_uuidIn=s_productUuid,
+                        s_codeIn=self.c_v8.String(d_item["code"]),
+                        l_imagesIn=d_batchImages.get(s_productUuid, [])
+                    ))
+
+            log_sys(f"Successfully processed {len(l_nomenclatures)} items in search mode.")
+            return l_nomenclatures
+        except Exception as e:
+            log_sys(f"Error in NomenclatureManager.search (batch): {e}", 1)
+            return []
+
     def _fetch_batch_details(self, l_productRefsIn: list) -> dict:
         """Batch fetches prices and stock quantities for a list of product references."""
         if not self.c_v8 or not l_productRefsIn:

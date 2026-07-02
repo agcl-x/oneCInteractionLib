@@ -41,6 +41,19 @@ try:
     assert c_conn.categories is not None
     print("Success: Checked all composition managers exist.")
     
+    # Test NomenclatureManager.search function (connection not active, should return [])
+    res = c_conn.nomenclature.search("ворота")
+    assert isinstance(res, list), f"Expected list, got {type(res)}"
+    assert len(res) == 0, f"Expected empty list because connection is not active, got {res}"
+    
+    res_name = c_conn.nomenclature.search("ворота", s_searchByIn="name")
+    assert isinstance(res_name, list) and len(res_name) == 0
+    
+    res_article = c_conn.nomenclature.search("sm1111", s_searchByIn="article")
+    assert isinstance(res_article, list) and len(res_article) == 0
+    
+    print("Success: NomenclatureManager.search tested with no active connection (with and without s_searchByIn parameters).")
+    
     # Test logging functionality
     print(f"Logs directory configured at: {LOGS_DIR}")
     
