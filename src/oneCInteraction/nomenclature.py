@@ -3,6 +3,16 @@ from datetime import datetime
 from .log import log_sys
 from . import structures
 
+def _parse_1c_date(dt_val) -> datetime | None:
+    if not dt_val:
+        return None
+    try:
+        if hasattr(dt_val, 'year') and dt_val.year <= 1:
+            return None
+        return datetime(dt_val.year, dt_val.month, dt_val.day, dt_val.hour, dt_val.minute, dt_val.second)
+    except Exception:
+        return None
+
 class NomenclatureManager:
     def __init__(self, c_connectionIn):
         self.c_connection = c_connectionIn
@@ -178,11 +188,23 @@ class NomenclatureManager:
                         l_characteristics = self.c_connection.characteristics.parse_name(s_charName)
 
                     l_varieties.append(structures.Variety(
-                        n_priceRetailIn=d_data["retail"],
-                        n_priceOptIn=d_data["wholesale"],
+                        c_priceRetailIn=structures.Price(
+                            n_value=d_data["retail"],
+                            dt_assigned=d_data.get("retail_date"),
+                            s_type="Розничная"
+                        ),
+                        c_priceOptIn=structures.Price(
+                            n_value=d_data["wholesale"],
+                            dt_assigned=d_data.get("wholesale_date"),
+                            s_type="Оптовая"
+                        ),
                         d_countIn=d_data["stocks"],
                         l_characteristicsIn=l_characteristics,
-                        n_pricePurchaseIn=d_data.get("purchase", 0.0)
+                        c_pricePurchaseIn=structures.Price(
+                            n_value=d_data.get("purchase", 0.0),
+                            dt_assigned=d_data.get("purchase_date"),
+                            s_type="Закупочная"
+                        )
                     ))
 
                 if l_varieties:
@@ -227,13 +249,25 @@ class NomenclatureManager:
                     ИНАЧЕ ISNULL(GeneralRetailPrices.Цена, 0) 
                 КОНЕЦ AS RetailPrice,
                 ВЫБОР 
+                    КОГДА ISNULL(RetailPrices.Цена, 0) > 0 ТОГДА RetailPrices.Период 
+                    ИНАЧЕ ISNULL(GeneralRetailPrices.Период, ДАТАВРЕМЯ(1, 1, 1)) 
+                КОНЕЦ AS RetailPriceDate,
+                ВЫБОР 
                     КОГДА ISNULL(WholesalePrices.Цена, 0) > 0 ТОГДА WholesalePrices.Цена 
                     ИНАЧЕ ISNULL(GeneralWholesalePrices.Цена, 0) 
                 КОНЕЦ AS WholesalePrice,
                 ВЫБОР 
+                    КОГДА ISNULL(WholesalePrices.Цена, 0) > 0 ТОГДА WholesalePrices.Период 
+                    ИНАЧЕ ISNULL(GeneralWholesalePrices.Период, ДАТАВРЕМЯ(1, 1, 1)) 
+                КОНЕЦ AS WholesalePriceDate,
+                ВЫБОР 
                     КОГДА ISNULL(PurchasePrices.Цена, 0) > 0 ТОГДА PurchasePrices.Цена 
                     ИНАЧЕ ISNULL(GeneralPurchasePrices.Цена, 0) 
                 КОНЕЦ AS PurchasePrice,
+                ВЫБОР 
+                    КОГДА ISNULL(PurchasePrices.Цена, 0) > 0 ТОГДА PurchasePrices.Период 
+                    ИНАЧЕ ISNULL(GeneralPurchasePrices.Период, ДАТАВРЕМЯ(1, 1, 1)) 
+                КОНЕЦ AS PurchasePriceDate,
                 ISNULL(Stocks.КоличествоОстаток, 0) AS Quantity
             FROM Справочник.Номенклатура AS MainTable
             LEFT JOIN Справочник.ХарактеристикиНоменклатуры AS Chars
@@ -286,6 +320,9 @@ class NomenclatureManager:
                     n_retailP = float(c_charSel.RetailPrice)
                     n_wholesaleP = float(c_charSel.WholesalePrice)
                     n_purchaseP = float(c_charSel.PurchasePrice)
+                    dt_retailD = _parse_1c_date(c_charSel.RetailPriceDate)
+                    dt_wholesaleD = _parse_1c_date(c_charSel.WholesalePriceDate)
+                    dt_purchaseD = _parse_1c_date(c_charSel.PurchasePriceDate)
 
                     if s_productUuid not in d_batchData:
                         d_batchData[s_productUuid] = {}
@@ -294,8 +331,11 @@ class NomenclatureManager:
                         d_batchData[s_productUuid][s_charName] = {
                             "ref": c_charRef,
                             "retail": n_retailP,
+                            "retail_date": dt_retailD,
                             "wholesale": n_wholesaleP,
+                            "wholesale_date": dt_wholesaleD,
                             "purchase": n_purchaseP,
+                            "purchase_date": dt_purchaseD,
                             "stocks": {}
                         }
                     
@@ -368,13 +408,25 @@ class NomenclatureManager:
                     ИНАЧЕ ISNULL(GeneralRetailPrices.Цена, 0) 
                 КОНЕЦ AS RetailPrice,
                 ВЫБОР 
+                    КОГДА ISNULL(RetailPrices.Цена, 0) > 0 ТОГДА RetailPrices.Период 
+                    ИНАЧЕ ISNULL(GeneralRetailPrices.Период, ДАТАВРЕМЯ(1, 1, 1)) 
+                КОНЕЦ AS RetailPriceDate,
+                ВЫБОР 
                     КОГДА ISNULL(WholesalePrices.Цена, 0) > 0 ТОГДА WholesalePrices.Цена 
                     ИНАЧЕ ISNULL(GeneralWholesalePrices.Цена, 0) 
                 КОНЕЦ AS WholesalePrice,
                 ВЫБОР 
+                    КОГДА ISNULL(WholesalePrices.Цена, 0) > 0 ТОГДА WholesalePrices.Период 
+                    ИНАЧЕ ISNULL(GeneralWholesalePrices.Период, ДАТАВРЕМЯ(1, 1, 1)) 
+                КОНЕЦ AS WholesalePriceDate,
+                ВЫБОР 
                     КОГДА ISNULL(PurchasePrices.Цена, 0) > 0 ТОГДА PurchasePrices.Цена 
                     ИНАЧЕ ISNULL(GeneralPurchasePrices.Цена, 0) 
                 КОНЕЦ AS PurchasePrice,
+                ВЫБОР 
+                    КОГДА ISNULL(PurchasePrices.Цена, 0) > 0 ТОГДА PurchasePrices.Период 
+                    ИНАЧЕ ISNULL(GeneralPurchasePrices.Период, ДАТАВРЕМЯ(1, 1, 1)) 
+                КОНЕЦ AS PurchasePriceDate,
                 ISNULL(Stocks.КоличествоОстаток, 0) AS Quantity
             FROM (SELECT &ProductRef AS Номенклатура) AS MainTable
             LEFT JOIN Справочник.ХарактеристикиНоменклатуры AS Chars
@@ -423,13 +475,19 @@ class NomenclatureManager:
                     n_retailPrice = float(c_charSel.RetailPrice)
                     n_wholesalePrice = float(c_charSel.WholesalePrice)
                     n_purchasePrice = float(c_charSel.PurchasePrice)
+                    dt_retailD = _parse_1c_date(c_charSel.RetailPriceDate)
+                    dt_wholesaleD = _parse_1c_date(c_charSel.WholesalePriceDate)
+                    dt_purchaseD = _parse_1c_date(c_charSel.PurchasePriceDate)
 
                     if s_charName not in d_tempData:
                         d_tempData[s_charName] = {
                             "ref": c_charRef,
                             "retail": n_retailPrice,
+                            "retail_date": dt_retailD,
                             "wholesale": n_wholesalePrice,
+                            "wholesale_date": dt_wholesaleD,
                             "purchase": n_purchasePrice,
+                            "purchase_date": dt_purchaseD,
                             "stocks": {}
                         }
 
@@ -451,10 +509,22 @@ class NomenclatureManager:
             l_varieties.append(self.c_connection.characteristics.get_variety(
                 c_charRefIn=d_data["ref"],
                 s_charNameIn=s_charName,
-                n_priceRetailIn=d_data["retail"],
-                n_priceOptIn=d_data["wholesale"],
+                c_priceRetailIn=structures.Price(
+                    n_value=d_data["retail"],
+                    dt_assigned=d_data.get("retail_date"),
+                    s_type="Розничная"
+                ),
+                c_priceOptIn=structures.Price(
+                    n_value=d_data["wholesale"],
+                    dt_assigned=d_data.get("wholesale_date"),
+                    s_type="Оптовая"
+                ),
                 d_stocksIn=d_data["stocks"],
-                n_pricePurchaseIn=d_data.get("purchase", 0.0)
+                c_pricePurchaseIn=structures.Price(
+                    n_value=d_data.get("purchase", 0.0),
+                    dt_assigned=d_data.get("purchase_date"),
+                    s_type="Закупочная"
+                )
             ))
 
         return structures.Nomenclature(
@@ -625,11 +695,23 @@ class NomenclatureManager:
                         l_characteristics = self.c_connection.characteristics.parse_name(s_charName)
 
                     l_varieties.append(structures.Variety(
-                        n_priceRetailIn=d_data["retail"],
-                        n_priceOptIn=d_data["wholesale"],
+                        c_priceRetailIn=structures.Price(
+                            n_value=d_data["retail"],
+                            dt_assigned=d_data.get("retail_date"),
+                            s_type="Розничная"
+                        ),
+                        c_priceOptIn=structures.Price(
+                            n_value=d_data["wholesale"],
+                            dt_assigned=d_data.get("wholesale_date"),
+                            s_type="Оптовая"
+                        ),
                         d_countIn=d_data["stocks"],
                         l_characteristicsIn=l_characteristics,
-                        n_pricePurchaseIn=d_data.get("purchase", 0.0)
+                        c_pricePurchaseIn=structures.Price(
+                            n_value=d_data.get("purchase", 0.0),
+                            dt_assigned=d_data.get("purchase_date"),
+                            s_type="Закупочная"
+                        )
                     ))
 
                 if l_varieties:
@@ -766,11 +848,23 @@ class NomenclatureManager:
                         l_characteristics = self.c_connection.characteristics.parse_name(s_charName)
 
                     l_varieties.append(structures.Variety(
-                        n_priceRetailIn=d_data["retail"],
-                        n_priceOptIn=d_data["wholesale"],
+                        c_priceRetailIn=structures.Price(
+                            n_value=d_data["retail"],
+                            dt_assigned=d_data.get("retail_date"),
+                            s_type="Розничная"
+                        ),
+                        c_priceOptIn=structures.Price(
+                            n_value=d_data["wholesale"],
+                            dt_assigned=d_data.get("wholesale_date"),
+                            s_type="Оптовая"
+                        ),
                         d_countIn=d_data["stocks"],
                         l_characteristicsIn=l_characteristics,
-                        n_pricePurchaseIn=d_data.get("purchase", 0.0)
+                        c_pricePurchaseIn=structures.Price(
+                            n_value=d_data.get("purchase", 0.0),
+                            dt_assigned=d_data.get("purchase_date"),
+                            s_type="Закупочная"
+                        )
                     ))
 
                 if l_varieties:

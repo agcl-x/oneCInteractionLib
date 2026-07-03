@@ -9,7 +9,8 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 try:
-    from oneCInteraction import Connection, Customer, Order, OrderItem, Nomenclature, Variety, Characteristic, Group, Category
+    from datetime import datetime
+    from oneCInteraction import Connection, Customer, Order, OrderItem, Nomenclature, Variety, Price, Characteristic, Group, Category
     from oneCInteraction.log import log_sys, LOGS_DIR
     
     print("Success: Imported Connection and all structures successfully from oneCInteraction!")
@@ -25,7 +26,25 @@ try:
     print("Success: Order instantiated.")
     print(f"Order __str__ test:\n{c_order}")
     
-    c_nom = Nomenclature(s_nameIn="Product 1", s_articleIn="ART001", l_varietyIn=[])
+    # Test Price & Variety structures
+    c_retail_price = Price(n_value=120.5, dt_assigned=datetime.now(), s_type="Розничная")
+    c_opt_price = Price(n_value=100.0, dt_assigned=datetime.now(), s_type="Оптовая")
+    c_purchase_price = Price(n_value=80.0, dt_assigned=datetime.now(), s_type="Закупочная")
+    
+    c_var = Variety(
+        c_priceRetailIn=c_retail_price,
+        c_priceOptIn=c_opt_price,
+        d_countIn={"Основной склад": 10},
+        l_characteristicsIn=[],
+        c_pricePurchaseIn=c_purchase_price
+    )
+    assert c_var.c_priceRetail.n_value == 120.5
+    assert c_var.c_priceOpt.n_value == 100.0
+    assert c_var.c_pricePurchase.n_value == 80.0
+    assert c_var.c_priceRetail.s_type == "Розничная"
+    print("Success: Price and Variety instantiated and verified.")
+    
+    c_nom = Nomenclature(s_nameIn="Product 1", s_articleIn="ART001", l_varietyIn=[c_var])
     print("Success: Nomenclature instantiated.")
     
     c_cat = Category(s_categoryNameIn="Shoes", l_nomenclaturesIn=[c_nom])
