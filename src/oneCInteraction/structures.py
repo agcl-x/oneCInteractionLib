@@ -23,18 +23,28 @@ class Nomenclature:
         self.s_code = s_codeIn
         self.l_images = l_imagesIn if l_imagesIn is not None else []
 
+class Price:
+    def __init__(self, n_value: float, dt_assigned: datetime = None, s_type: str = ""):
+        self.n_value = float(n_value)
+        self.dt_assigned = dt_assigned  # datetime object
+        self.s_type = s_type            # Russian name, e.g. "Розничная", "Оптовая", "Закупочная"
+
+    def __repr__(self):
+        s_date = self.dt_assigned.strftime("%d.%m.%Y") if self.dt_assigned else "None"
+        return f"Price({self.n_value}, date={s_date}, type='{self.s_type}')"
+
 class Variety:
     def __init__(
         self,
-        n_priceRetailIn: float,
-        n_priceOptIn: float,
+        c_priceRetailIn: Price,
+        c_priceOptIn: Price,
         d_countIn: dict,
         l_characteristicsIn: list,
-        n_pricePurchaseIn: float = 0.0
+        c_pricePurchaseIn: Price = None
     ):
-        self.n_priceRetail = n_priceRetailIn
-        self.n_priceOpt = n_priceOptIn
-        self.n_pricePurchase = n_pricePurchaseIn
+        self.c_priceRetail = c_priceRetailIn
+        self.c_priceOpt = c_priceOptIn
+        self.c_pricePurchase = c_pricePurchaseIn if c_pricePurchaseIn is not None else Price(0.0, s_type="Закупочная")
         self.d_count = d_countIn
         self.l_characteristics = l_characteristicsIn
 

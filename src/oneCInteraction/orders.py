@@ -139,7 +139,7 @@ class OrdersManager:
                         if not c_foundVariety:
                             c_foundVariety = c_tempNom.l_variety[0]
                             
-                        n_actualPrice = c_foundVariety.n_priceRetail
+                        n_actualPrice = c_foundVariety.c_priceRetail.n_value
                 except Exception as e:
                     log_sys(f"Cannot get nomenclature price: {e}. Setting price to 0", 1)
                     n_actualPrice = 0.0

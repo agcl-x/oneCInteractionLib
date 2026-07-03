@@ -76,11 +76,17 @@ Represents a product.
 - `s_code` (str): 1C product code.
 - `l_images` (list): List of image UUIDs associated with the product in 1C.
 
+#### `Price`
+Represents a price with its value, assignment date, and type.
+- `n_value` (float): Price value.
+- `dt_assigned` (datetime): Date and time when the price was set in 1C.
+- `s_type` (str): Price type name in Russian (e.g. `"Розничная"`, `"Оптовая"`, `"Закупочная"`).
+
 #### `Variety`
 Represents a product variant with specific prices and stock levels.
-- `n_priceRetail` (float): Retail price for the variant.
-- `n_priceOpt` (float): Wholesale price for the variant.
-- `n_pricePurchase` (float): Purchase price for the variant.
+- `c_priceRetail` (`Price`): Retail price object for the variant.
+- `c_priceOpt` (`Price`): Wholesale price object for the variant.
+- `c_pricePurchase` (`Price`): Purchase price object for the variant.
 - `d_count` (dict): Stock balances by warehouse in the format `{"Warehouse Name": quantity}`.
 - `l_characteristics` (list of `Characteristic`): List of characteristics for the variant.
 
@@ -246,7 +252,8 @@ if c_conn.c_v8:
             print(f"Product: {p.s_name} | SKU: {p.s_article}")
             if p.l_variety:
                 v = p.l_variety[0]
-                print(f"  Price: {v.n_priceRetail} UAH | Stocks: {v.d_count}")
+                s_date = v.c_priceRetail.dt_assigned.strftime("%d.%m.%Y") if v.c_priceRetail.dt_assigned else "N/A"
+                print(f"  Price: {v.c_priceRetail.n_value} UAH (set on {s_date}) | Stocks: {v.d_count}")
 
             # Download product images
             images = c_conn.nomenclature.get_images(p, s_imageDirIn="static/images")
