@@ -139,7 +139,18 @@ class OrdersManager:
                     continue
 
                 log_sys("Nomenclature successfully fetched")
-                s_itemProp = c_item.s_productPropertie
+                
+                # Extract characteristic description from variety if present
+                s_itemProp = ""
+                if getattr(c_item, "c_variety", None) is not None:
+                    parts = []
+                    for char in c_item.c_variety.l_characteristics:
+                        if char.s_name == "Характеристика":
+                            parts.append(char.s_value)
+                        else:
+                            parts.append(f"{char.s_name}: {char.s_value}")
+                    s_itemProp = ", ".join(parts)
+                    
                 log_sys(f"Trying to get nomenclature characteristic({s_itemProp})")
                 c_charRef = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.EmptyRef()
                 if s_itemProp:
@@ -153,26 +164,29 @@ class OrdersManager:
                 # Fetch price
                 log_sys("Trying to get nomenclature price...")
                 try:
-                    c_tempNom = self.c_connection.nomenclature.get(s_articleIn=c_item.s_productArticle)
-                    n_actualPrice = 0.0
-                    if c_tempNom and c_tempNom.l_variety:
-                        c_foundVariety = None
-                        for c_variety in c_tempNom.l_variety:
-                            if not s_itemProp:
-                                c_foundVariety = c_variety
-                                break
-                            
-                            for c_char in c_variety.l_characteristics:
-                                if c_char.s_value == s_itemProp or f"{c_char.s_name}: {c_char.s_value}" == s_itemProp:
+                    if getattr(c_item, "c_variety", None) is not None:
+                        n_actualPrice = c_item.c_variety.c_priceRetail.n_value
+                    else:
+                        c_tempNom = self.c_connection.nomenclature.get(s_articleIn=c_item.s_productArticle)
+                        n_actualPrice = 0.0
+                        if c_tempNom and c_tempNom.l_variety:
+                            c_foundVariety = None
+                            for c_variety in c_tempNom.l_variety:
+                                if not s_itemProp:
                                     c_foundVariety = c_variety
                                     break
-                            if c_foundVariety:
-                                break
-                        
-                        if not c_foundVariety:
-                            c_foundVariety = c_tempNom.l_variety[0]
+                                
+                                for c_char in c_variety.l_characteristics:
+                                    if c_char.s_value == s_itemProp or f"{c_char.s_name}: {c_char.s_value}" == s_itemProp:
+                                        c_foundVariety = c_variety
+                                        break
+                                if c_foundVariety:
+                                    break
                             
-                        n_actualPrice = c_foundVariety.c_priceRetail.n_value
+                            if not c_foundVariety:
+                                c_foundVariety = c_tempNom.l_variety[0]
+                                
+                            n_actualPrice = c_foundVariety.c_priceRetail.n_value
                 except Exception as e:
                     log_sys(f"Cannot get nomenclature price: {e}. Setting price to 0", 1)
                     n_actualPrice = 0.0
@@ -243,13 +257,21 @@ class OrdersManager:
             l_orderItemsList = []
             for c_row in c_orderObj1c.Товары:
                 s_article = c_row.Номенклатура.Артикул
-                s_charName = ""
-                if not c_row.ХарактеристикаНоменклатуры.IsEmpty():
-                    s_charName = c_row.ХарактеристикаНоменклатуры.Наименование
+                c_variety = None
+                c_charRef = c_row.ХарактеристикаНоменклатуры
+                if not c_charRef.IsEmpty():
+                    s_charName = c_charRef.Наименование
+                    l_chars = self.c_connection.characteristics.get(c_charRef, s_charName)
+                    c_variety = structures.Variety(
+                        c_priceRetailIn=structures.Price(c_row.Цена, s_type="Розничная"),
+                        c_priceOptIn=structures.Price(0.0, s_type="Оптовая"),
+                        d_countIn={},
+                        l_characteristicsIn=l_chars
+                    )
 
                 c_item = structures.OrderItem(
                     s_productArticleIn=s_article,
-                    s_productPropertieIn=s_charName,
+                    c_varietyIn=c_variety,
                     n_productCountIn=c_row.Количество
                 )
                 l_orderItemsList.append(c_item)

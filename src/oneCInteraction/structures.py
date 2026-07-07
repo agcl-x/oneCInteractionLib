@@ -108,15 +108,13 @@ class OrderItem:
     def __init__(
         self,
         s_productArticleIn: str,
-        s_productPropertieIn: str = "",
+        c_varietyIn: Variety = None,
         n_productCountIn: int = 1
     ):
         self.s_productArticle = s_productArticleIn
-        self.s_productPropertie = s_productPropertieIn
+        self.c_variety = c_varietyIn
         self.n_productCount = n_productCountIn
 
-    def __dict__(self):
-        return {f'{self.s_productArticle}': self.s_productPropertie}
 
 class Order:
     def __init__(
@@ -132,18 +130,3 @@ class Order:
         self.s_date = datetime.now().strftime("%H:%M %d.%m.%Y")
         self.n_orderCode = n_orderCodeIn
 
-    def __str__(self):
-        s_pib = f"{self.c_orderCustomer.s_customerSurname} {self.c_orderCustomer.s_customerName} {self.c_orderCustomer.s_customerPatronymic}".strip()
-        s_outString = f'''\t<b>ЗАМОВЛЕННЯ №{self.n_orderCode}</b>
-        📅Дата: {self.s_date}\n
-        🔗Користувач: <a href="tg://user?id={self.c_orderCustomer.s_customerId}">Замовник</a>
-            🙎‍♂️ПІБ: {s_pib}
-            📞Номер телефону: {self.c_orderCustomer.s_customerPhone}
-            🏠Адреса: {self.c_orderCustomer.s_customerAddress}\n
-        🔢ТТН: {self.s_TTN}
-        📩Статус: {self.s_status}\n
-        📃Список покупок:\n'''
-        for c_item in self.l_orderItemsList:
-            s_outString += f'\t\t⚫{c_item.s_productArticle}:{c_item.s_productPropertie} - {c_item.n_productCount}\n'
-
-        return s_outString

@@ -19,30 +19,60 @@ try:
     c_cust = Customer(s_customerIdIn="123456789", s_customerNameIn="Ivan", s_customerSurnameIn="Ivanov", s_customerPhoneIn="+380991112233")
     print("Success: Customer instantiated.")
     
-    c_item = OrderItem(s_productArticleIn="ART001", s_productPropertieIn="Red", n_productCountIn=2)
-    print("Success: OrderItem instantiated.")
-    
-    c_order = Order(c_orderCustomerIn=c_cust, l_orderItemsListIn=[c_item], n_orderCodeIn=1001)
-    print("Success: Order instantiated.")
-    print(f"Order __str__ test:\n{c_order}")
-    
     # Test Price & Variety structures
     c_retail_price = Price(n_value=120.5, dt_assigned=datetime.now(), s_type="Розничная")
     c_opt_price = Price(n_value=100.0, dt_assigned=datetime.now(), s_type="Оптовая")
     c_purchase_price = Price(n_value=80.0, dt_assigned=datetime.now(), s_type="Закупочная")
     
-    c_var = Variety(
+    c_var_no_char = Variety(
         c_priceRetailIn=c_retail_price,
         c_priceOptIn=c_opt_price,
         d_countIn={"Основной склад": 10},
         l_characteristicsIn=[],
         c_pricePurchaseIn=c_purchase_price
     )
-    assert c_var.c_priceRetail.n_value == 120.5
-    assert c_var.c_priceOpt.n_value == 100.0
-    assert c_var.c_pricePurchase.n_value == 80.0
-    assert c_var.c_priceRetail.s_type == "Розничная"
+    assert c_var_no_char.c_priceRetail.n_value == 120.5
+    assert c_var_no_char.c_priceOpt.n_value == 100.0
+    assert c_var_no_char.c_pricePurchase.n_value == 80.0
+    assert c_var_no_char.c_priceRetail.s_type == "Розничная"
     print("Success: Price and Variety instantiated and verified.")
+    
+    # Variety with single generic Characteristic
+    c_var_generic_char = Variety(
+        c_priceRetailIn=c_retail_price,
+        c_priceOptIn=c_opt_price,
+        d_countIn={"Основной склад": 10},
+        l_characteristicsIn=[Characteristic("Характеристика", "Red")],
+        c_pricePurchaseIn=c_purchase_price
+    )
+    
+    # Variety with multiple named Characteristics
+    c_var_named_chars = Variety(
+        c_priceRetailIn=c_retail_price,
+        c_priceOptIn=c_opt_price,
+        d_countIn={"Основной склад": 10},
+        l_characteristicsIn=[
+            Characteristic("Цвет", "Синій"),
+            Characteristic("Розмір", "M")
+        ],
+        c_pricePurchaseIn=c_purchase_price
+    )
+
+    # New Variety-based construction
+    c_item_variety_no_char = OrderItem(s_productArticleIn="ART001", c_varietyIn=c_var_no_char, n_productCountIn=1)
+    assert c_item_variety_no_char.c_variety == c_var_no_char
+    
+    c_item_variety_generic = OrderItem(s_productArticleIn="ART001", c_varietyIn=c_var_generic_char, n_productCountIn=2)
+    assert c_item_variety_generic.c_variety == c_var_generic_char
+    
+    c_item_variety_named = OrderItem(s_productArticleIn="ART001", c_varietyIn=c_var_named_chars, n_productCountIn=5)
+    assert c_item_variety_named.c_variety == c_var_named_chars
+    print("Success: New Variety-based OrderItems instantiated and verified.")
+    
+    c_order = Order(c_orderCustomerIn=c_cust, l_orderItemsListIn=[c_item_variety_named], n_orderCodeIn=1001)
+    print("Success: Order instantiated with variety-based items.")
+    
+    c_var = c_var_no_char
     
     c_nom = Nomenclature(s_nameIn="Product 1", s_articleIn="ART001", l_varietyIn=[c_var])
     print("Success: Nomenclature instantiated.")
