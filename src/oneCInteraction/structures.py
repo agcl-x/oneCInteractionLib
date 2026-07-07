@@ -88,15 +88,21 @@ class Category:
 class Customer:
     def __init__(
         self,
-        s_customerTelegramIdIn: str,
-        s_customerPIBIn: str = "",
+        s_customerIdIn: str,
+        s_customerNameIn: str = "",
+        s_customerSurnameIn: str = "",
+        s_customerPatronymicIn: str = "",
         s_customerPhoneIn: str = "",
-        s_customerAddressIn: str = ""
+        s_customerAddressIn: str = "",
+        s_customerCodeIn: str = ""
     ):
-        self.s_customerTelegramId = s_customerTelegramIdIn
-        self.s_customerPIB = s_customerPIBIn
+        self.s_customerId = s_customerIdIn
+        self.s_customerName = s_customerNameIn
+        self.s_customerSurname = s_customerSurnameIn
+        self.s_customerPatronymic = s_customerPatronymicIn
         self.s_customerPhone = s_customerPhoneIn
         self.s_customerAddress = s_customerAddressIn
+        self.s_customerCode = s_customerCodeIn
 
 class OrderItem:
     def __init__(
@@ -127,10 +133,11 @@ class Order:
         self.n_orderCode = n_orderCodeIn
 
     def __str__(self):
+        s_pib = f"{self.c_orderCustomer.s_customerSurname} {self.c_orderCustomer.s_customerName} {self.c_orderCustomer.s_customerPatronymic}".strip()
         s_outString = f'''\t<b>ЗАМОВЛЕННЯ №{self.n_orderCode}</b>
         📅Дата: {self.s_date}\n
-        🔗Користувач: <a href="tg://user?id={self.c_orderCustomer.s_customerTelegramId}">Замовник</a>
-            🙎‍♂️ПІБ: {self.c_orderCustomer.s_customerPIB}
+        🔗Користувач: <a href="tg://user?id={self.c_orderCustomer.s_customerId}">Замовник</a>
+            🙎‍♂️ПІБ: {s_pib}
             📞Номер телефону: {self.c_orderCustomer.s_customerPhone}
             🏠Адреса: {self.c_orderCustomer.s_customerAddress}\n
         🔢ТТН: {self.s_TTN}

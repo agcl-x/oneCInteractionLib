@@ -41,18 +41,51 @@ class OrdersManager:
             log_sys("Date successfully added")
 
             # Client / Counteragent
-            try:
-                log_sys("Trying to find contragent by code...")
-                c_clientRef = self.c_v8.Catalogs.Контрагенты.FindByCode(self.c_connection.s_counteragent_code)
-                if c_clientRef.IsEmpty():
-                    log_sys(f"Can't find contragent by code: {self.c_connection.s_counteragent_code}. Returning \"\"", 1)
+            c_clientRef = None
+            c_customer = getattr(c_orderObjIn, "c_orderCustomer", None)
+            
+            if c_customer:
+                log_sys("Customer structure found in order. Trying to resolve counteragent in 1C...")
+                try:
+                    # 1. Try by code if present
+                    if c_customer.s_customerCode:
+                        log_sys(f"Searching customer by code: {c_customer.s_customerCode}")
+                        c_ref = self.c_v8.Catalogs.Контрагенты.FindByCode(c_customer.s_customerCode)
+                        if not c_ref.IsEmpty():
+                            c_clientRef = c_ref
+                            log_sys("Customer found by code.")
+                    
+                    # 2. If not found or code is empty, create a new counterparty
+                    if not c_clientRef:
+                        log_sys("Customer not found in 1C. Attempting to create a new counterparty...")
+                        s_newCode = self.c_connection.customers.create(c_customer)
+                        if s_newCode:
+                            c_ref = self.c_v8.Catalogs.Контрагенты.FindByCode(s_newCode)
+                            if not c_ref.IsEmpty():
+                                c_clientRef = c_ref
+                                log_sys("New customer created and resolved.")
+                except Exception as e:
+                    log_sys(f"Failed to resolve customer: {e}. Falling back to bot counteragent...", 1)
+            
+            # Fallback to Bot Counteragent if customer resolution failed or customer wasn't provided
+            if not c_clientRef or c_clientRef.IsEmpty():
+                log_sys(f"Falling back to bot counteragent with code: {self.c_connection.s_counteragent_code}")
+                try:
+                    c_clientRef = self.c_v8.Catalogs.Контрагенты.FindByCode(self.c_connection.s_counteragent_code)
+                    if c_clientRef.IsEmpty():
+                        log_sys(f"Can't find bot contragent by code: {self.c_connection.s_counteragent_code}. Returning \"\"", 1)
+                        return ""
+                except Exception as e:
+                    log_sys(f"Failed to resolve bot contragent: {e}. Returning \"\"", 1)
                     return ""
 
+            try:
                 c_newOrder.Контрагент = c_clientRef
+                self.c_connection.customers.ensure_default_contract(c_clientRef)
                 c_newOrder.ДоговорКонтрагента = c_clientRef.ОсновнойДоговорКонтрагента
                 log_sys("Contragent and ContragentContract successfully added to order")
             except Exception as e:
-                log_sys(f"Failed contragent finding: {e}. Returning \"\"", 1)
+                log_sys(f"Failed adding contragent/contract reference to order: {e}. Returning \"\"", 1)
                 return ""
 
             # Organisation
@@ -204,8 +237,8 @@ class OrdersManager:
             c_orderObj1c = c_orderRef.GetObject()
 
             s_telegramId = c_orderObj1c.Комментарий
-            c_customer = structures.Customer(s_customerTelegramIdIn=s_telegramId)
-            log_sys(f"Customer Telegram ID extracted from comments: {s_telegramId}")
+            c_customer = structures.Customer(s_customerIdIn=s_telegramId)
+            log_sys(f"Customer ID extracted from comments: {s_telegramId}")
 
             l_orderItemsList = []
             for c_row in c_orderObj1c.Товары:
@@ -302,9 +335,9 @@ class OrdersManager:
             c_orderObj1c = c_orderRef.GetObject()
             c_customer = c_orderObjIn.c_orderCustomer
 
-            s_pib = c_customer.s_customerPIB
+            s_pib = f"{c_customer.s_customerSurname} {c_customer.s_customerName} {c_customer.s_customerPatronymic}".strip()
             s_phone = c_customer.s_customerPhone
-            s_telegramId = c_customer.s_customerTelegramId
+            s_telegramId = c_customer.s_customerId
             s_ttn = c_orderObjIn.s_TTN
             s_status = c_orderObjIn.s_status
 
