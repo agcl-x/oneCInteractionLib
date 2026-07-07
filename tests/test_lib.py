@@ -16,7 +16,7 @@ try:
     print("Success: Imported Connection and all structures successfully from oneCInteraction!")
     
     # Test instantiation of structures
-    c_cust = Customer(s_customerTelegramIdIn="123456789", s_customerPIBIn="Ivan Ivanov", s_customerPhoneIn="+380991112233")
+    c_cust = Customer(s_customerIdIn="123456789", s_customerNameIn="Ivan", s_customerSurnameIn="Ivanov", s_customerPhoneIn="+380991112233")
     print("Success: Customer instantiated.")
     
     c_item = OrderItem(s_productArticleIn="ART001", s_productPropertieIn="Red", n_productCountIn=2)
@@ -58,7 +58,16 @@ try:
     assert c_conn.orders is not None
     assert c_conn.characteristics is not None
     assert c_conn.categories is not None
+    assert c_conn.customers is not None
     print("Success: Checked all composition managers exist.")
+
+    # Test CustomersManager when connection is not active
+    cust_res = c_conn.customers.get("CUST001")
+    assert cust_res is None, f"Expected None since connection is not active, got {cust_res}"
+
+    cust_create_res = c_conn.customers.create(c_cust)
+    assert cust_create_res == "", f"Expected empty string since connection is not active, got {cust_create_res}"
+    print("Success: CustomersManager.get and create tested with no active connection.")
     
     # Test NomenclatureManager.search function (connection not active, should return [])
     res = c_conn.nomenclature.search("ворота")
