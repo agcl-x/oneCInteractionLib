@@ -136,8 +136,8 @@ class OrdersManager:
             # Order Items List
             log_sys("Parsing orderItemList")
             for c_item in c_orderObjIn.l_orderItemsList:
-                log_sys(f"Trying to get nomenclature by code ({c_item.s_productArticle})")
-                c_nomRef = self.c_v8.Catalogs.Номенклатура.FindByCode(c_item.s_productArticle)
+                log_sys(f"Trying to get nomenclature by code ({c_item.s_productCode})")
+                c_nomRef = self.c_v8.Catalogs.Номенклатура.FindByCode(c_item.s_productCode)
 
                 if c_nomRef.IsEmpty():
                     log_sys("Nomenclature not found, skipping...")
@@ -197,7 +197,7 @@ class OrdersManager:
                     # 2. Get the actual price from 1C
                     n_1cPrice = 0.0
                     try:
-                        c_tempNom = self.c_connection.nomenclature.get(s_codeIn=c_item.s_productArticle)
+                        c_tempNom = self.c_connection.nomenclature.get(s_codeIn=c_item.s_productCode)
                         if c_tempNom and c_tempNom.l_variety:
                             c_foundVariety = None
                             for c_variety in c_tempNom.l_variety:
@@ -222,12 +222,12 @@ class OrdersManager:
                     # 3. Compare and set final actual price
                     if has_variety:
                         if n_1cPrice > 0.0:
-                            log_sys(f"Comparing variety price ({n_passedPrice}) with 1C price ({n_1cPrice}) for {c_item.s_productArticle}")
+                            log_sys(f"Comparing variety price ({n_passedPrice}) with 1C price ({n_1cPrice}) for {c_item.s_productCode}")
                             if abs(n_passedPrice - n_1cPrice) > 0.01:
-                                log_sys(f"Price mismatch detected for {c_item.s_productArticle}: variety price is {n_passedPrice}, but 1C price is {n_1cPrice}. Using 1C price.", 1)
+                                log_sys(f"Price mismatch detected for {c_item.s_productCode}: variety price is {n_passedPrice}, but 1C price is {n_1cPrice}. Using 1C price.", 1)
                             n_actualPrice = n_1cPrice
                         else:
-                            log_sys(f"Could not fetch 1C price for {c_item.s_productArticle} or price is 0. Using variety price ({n_passedPrice}).")
+                            log_sys(f"Could not fetch 1C price for {c_item.s_productCode} or price is 0. Using variety price ({n_passedPrice}).")
                             n_actualPrice = n_passedPrice
                     else:
                         n_actualPrice = n_1cPrice
@@ -348,7 +348,7 @@ class OrdersManager:
                     )
 
                 c_item = structures.OrderItem(
-                    s_productArticleIn=s_article,
+                    s_productCodeIn=s_article,
                     c_varietyIn=c_variety,
                     n_productCountIn=c_row.Количество
                 )

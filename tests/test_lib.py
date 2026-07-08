@@ -59,13 +59,13 @@ try:
     )
 
     # New Variety-based construction
-    c_item_variety_no_char = OrderItem(s_productArticleIn="ART001", c_varietyIn=c_var_no_char, n_productCountIn=1)
+    c_item_variety_no_char = OrderItem(s_productCodeIn="ART001", c_varietyIn=c_var_no_char, n_productCountIn=1)
     assert c_item_variety_no_char.c_variety == c_var_no_char
     
-    c_item_variety_generic = OrderItem(s_productArticleIn="ART001", c_varietyIn=c_var_generic_char, n_productCountIn=2)
+    c_item_variety_generic = OrderItem(s_productCodeIn="ART001", c_varietyIn=c_var_generic_char, n_productCountIn=2)
     assert c_item_variety_generic.c_variety == c_var_generic_char
     
-    c_item_variety_named = OrderItem(s_productArticleIn="ART001", c_varietyIn=c_var_named_chars, n_productCountIn=5)
+    c_item_variety_named = OrderItem(s_productCodeIn="ART001", c_varietyIn=c_var_named_chars, n_productCountIn=5)
     assert c_item_variety_named.c_variety == c_var_named_chars
     print("Success: New Variety-based OrderItems instantiated and verified.")
     

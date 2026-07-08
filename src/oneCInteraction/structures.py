@@ -107,11 +107,11 @@ class Customer:
 class OrderItem:
     def __init__(
         self,
-        s_productArticleIn: str,
+        s_productCodeIn: str,
         c_varietyIn: Variety = None,
         n_productCountIn: int = 1
     ):
-        self.s_productArticle = s_productArticleIn
+        self.s_productCode = s_productCodeIn
         self.c_variety = c_varietyIn
         self.n_productCount = n_productCountIn
 

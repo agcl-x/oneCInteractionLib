@@ -125,7 +125,7 @@ Information about the buyer.
 
 #### `OrderItem`
 An item in the order.
-- `s_productArticle` (str): Product article (SKU).
+- `s_productCode` (str): Product 1C code.
 - `s_productPropertie` (str): Selected characteristic name (if any).
 - `n_productCount` (int): Quantity of items.
 
@@ -288,7 +288,7 @@ if c_conn.c_v8:
 
         items = [
             OrderItem(
-                s_productArticleIn="ART-1024",
+                s_productCodeIn="ART-1024",
                 s_productPropertieIn="Size: L, Color: Blue",
                 n_productCountIn=2
             )
