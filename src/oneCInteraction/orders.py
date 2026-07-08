@@ -43,6 +43,7 @@ class OrdersManager:
             # Client / Counteragent
             c_clientRef = None
             c_customer = getattr(c_orderObjIn, "c_orderCustomer", None)
+            b_isBotCounteragent = False
             
             if c_customer:
                 log_sys("Customer structure found in order. Trying to resolve counteragent in 1C...")
@@ -69,6 +70,7 @@ class OrdersManager:
             
             # Fallback to Bot Counteragent if customer resolution failed or customer wasn't provided
             if not c_clientRef or c_clientRef.IsEmpty():
+                b_isBotCounteragent = True
                 log_sys(f"Falling back to bot counteragent with code: {self.c_connection.s_counteragent_code}")
                 try:
                     c_clientRef = self.c_v8.Catalogs.Контрагенты.FindByCode(self.c_connection.s_counteragent_code)
@@ -119,9 +121,12 @@ class OrdersManager:
 
             # Price Type
             log_sys("Trying to get price type...")
-            c_retailPriceRef = self.c_connection.get_price_type_ref("Розничная")
-            c_newOrder.ТипЦен = c_retailPriceRef
-            log_sys("Price type successfully added to order")
+            s_price_type_name = getattr(c_orderObjIn, "s_price_type", "")
+            if not s_price_type_name:
+                s_price_type_name = "Розничная"
+            c_priceTypeRef = self.c_connection.get_price_type_ref(s_price_type_name)
+            c_newOrder.ТипЦен = c_priceTypeRef
+            log_sys(f"Price type ({s_price_type_name}) successfully added to order")
 
             # Exchange rate settings
             c_newOrder.КурсВзаиморасчетов = 1.0
@@ -131,8 +136,8 @@ class OrdersManager:
             # Order Items List
             log_sys("Parsing orderItemList")
             for c_item in c_orderObjIn.l_orderItemsList:
-                log_sys(f"Trying to get nomenclature({c_item.s_productArticle})")
-                c_nomRef = self.c_v8.Catalogs.Номенклатура.FindByAttribute("Артикул", c_item.s_productArticle)
+                log_sys(f"Trying to get nomenclature by code ({c_item.s_productArticle})")
+                c_nomRef = self.c_v8.Catalogs.Номенклатура.FindByCode(c_item.s_productArticle)
 
                 if c_nomRef.IsEmpty():
                     log_sys("Nomenclature not found, skipping...")
@@ -164,11 +169,35 @@ class OrdersManager:
                 # Fetch price
                 log_sys("Trying to get nomenclature price...")
                 try:
-                    if getattr(c_item, "c_variety", None) is not None:
-                        n_actualPrice = c_item.c_variety.c_priceRetail.n_value
-                    else:
-                        c_tempNom = self.c_connection.nomenclature.get(s_articleIn=c_item.s_productArticle)
-                        n_actualPrice = 0.0
+                    # Determine price type to use from order object
+                    s_price_type_name = getattr(c_orderObjIn, "s_price_type", "")
+                    if not s_price_type_name:
+                        s_price_type_name = "Розничная"
+
+                    def get_variety_price(variety):
+                        # Try to match by s_type of the Price object
+                        for price_attr in ["c_priceRetail", "c_priceOpt", "c_pricePurchase"]:
+                            price_obj = getattr(variety, price_attr, None)
+                            if price_obj and price_obj.s_type == s_price_type_name:
+                                return price_obj.n_value
+                        # Fallback mappings based on standard names
+                        if s_price_type_name == "Оптовая":
+                            return variety.c_priceOpt.n_value
+                        elif s_price_type_name == "Закупочная":
+                            return variety.c_pricePurchase.n_value
+                        else:
+                            return variety.c_priceRetail.n_value
+
+                    # 1. Price from variety passed in c_item
+                    n_passedPrice = 0.0
+                    has_variety = getattr(c_item, "c_variety", None) is not None
+                    if has_variety:
+                        n_passedPrice = get_variety_price(c_item.c_variety)
+
+                    # 2. Get the actual price from 1C
+                    n_1cPrice = 0.0
+                    try:
+                        c_tempNom = self.c_connection.nomenclature.get(s_codeIn=c_item.s_productArticle)
                         if c_tempNom and c_tempNom.l_variety:
                             c_foundVariety = None
                             for c_variety in c_tempNom.l_variety:
@@ -186,7 +215,22 @@ class OrdersManager:
                             if not c_foundVariety:
                                 c_foundVariety = c_tempNom.l_variety[0]
                                 
-                            n_actualPrice = c_foundVariety.c_priceRetail.n_value
+                            n_1cPrice = get_variety_price(c_foundVariety)
+                    except Exception as e:
+                        log_sys(f"Failed to fetch actual 1C price for comparison: {e}", 1)
+
+                    # 3. Compare and set final actual price
+                    if has_variety:
+                        if n_1cPrice > 0.0:
+                            log_sys(f"Comparing variety price ({n_passedPrice}) with 1C price ({n_1cPrice}) for {c_item.s_productArticle}")
+                            if abs(n_passedPrice - n_1cPrice) > 0.01:
+                                log_sys(f"Price mismatch detected for {c_item.s_productArticle}: variety price is {n_passedPrice}, but 1C price is {n_1cPrice}. Using 1C price.", 1)
+                            n_actualPrice = n_1cPrice
+                        else:
+                            log_sys(f"Could not fetch 1C price for {c_item.s_productArticle} or price is 0. Using variety price ({n_passedPrice}).")
+                            n_actualPrice = n_passedPrice
+                    else:
+                        n_actualPrice = n_1cPrice
                 except Exception as e:
                     log_sys(f"Cannot get nomenclature price: {e}. Setting price to 0", 1)
                     n_actualPrice = 0.0
@@ -205,18 +249,39 @@ class OrdersManager:
                 except Exception as e:
                     log_sys(f"Failed adding nomenclature: {e}", 1)
                 
-            self.update_info(c_orderObjIn)
+            # Add customer info and metadata directly to order comment before writing
+            s_comment_parts = []
+            if b_isBotCounteragent and c_customer:
+                s_pib = f"{c_customer.s_customerSurname} {c_customer.s_customerName} {c_customer.s_customerPatronymic}".strip()
+                if s_pib:
+                    s_comment_parts.append(s_pib)
+                if c_customer.s_customerPhone:
+                    s_comment_parts.append(c_customer.s_customerPhone)
+                if c_customer.s_customerId:
+                    s_comment_parts.append(c_customer.s_customerId)
+            
+            s_ttn = getattr(c_orderObjIn, "s_TTN", "")
+            s_status = getattr(c_orderObjIn, "s_status", "")
+            if s_ttn:
+                s_comment_parts.append(s_ttn)
+            if s_status:
+                s_comment_parts.append(s_status)
+                
+            if s_comment_parts:
+                c_newOrder.Комментарий = " ".join(s_comment_parts)
 
             try:
                 log_sys("Everything done. Trying to post order...")
                 c_newOrder.Write(self.c_v8.DocumentWriteMode.Posting)
                 log_sys(f"Order was successfully posted. Code: {c_newOrder.Номер}")
+                c_orderObjIn.n_orderCode = c_newOrder.Номер
                 return c_newOrder.Номер
             except Exception as e:
                 try:
                     log_sys(f"Failed posting order ({e}). Trying to save it...")
                     c_newOrder.Write(self.c_v8.DocumentWriteMode.Write)
                     log_sys(f"Order was successfully saved. Returning code: {c_newOrder.Номер}")
+                    c_orderObjIn.n_orderCode = c_newOrder.Номер
                     return c_newOrder.Номер
                 except Exception as e2:
                     log_sys(f"Failed saving order: {e2}")
@@ -250,13 +315,26 @@ class OrdersManager:
             log_sys("Order found. Extracting data...")
             c_orderObj1c = c_orderRef.GetObject()
 
-            s_telegramId = c_orderObj1c.Комментарий
+            s_comment = ""
+            try:
+                s_comment = self.c_v8.String(c_orderObj1c.Комментарий)
+            except Exception as e:
+                log_sys(f"Failed to get comment from 1C order document: {e}", 1)
+
+            s_telegramId = s_comment
             c_customer = structures.Customer(s_customerIdIn=s_telegramId)
             log_sys(f"Customer ID extracted from comments: {s_telegramId}")
 
+            s_price_type = ""
+            try:
+                if not c_orderObj1c.ТипЦен.IsEmpty():
+                    s_price_type = c_orderObj1c.ТипЦен.Наименование
+            except Exception as e:
+                log_sys(f"Failed to get price type from 1C order document: {e}", 1)
+
             l_orderItemsList = []
             for c_row in c_orderObj1c.Товары:
-                s_article = c_row.Номенклатура.Артикул
+                s_article = c_row.Номенклатура.Код
                 c_variety = None
                 c_charRef = c_row.ХарактеристикаНоменклатуры
                 if not c_charRef.IsEmpty():
@@ -279,7 +357,9 @@ class OrdersManager:
             c_resultOrder = structures.Order(
                 c_orderCustomerIn=c_customer,
                 l_orderItemsListIn=l_orderItemsList,
-                n_orderCodeIn=s_codeIn
+                n_orderCodeIn=s_codeIn,
+                s_price_typeIn=s_price_type,
+                s_commentIn=s_comment
             )
 
             log_sys(f"Order {s_codeIn} successfully fetched and parsed.")
@@ -342,7 +422,7 @@ class OrdersManager:
             return []
 
     def update_info(self, c_orderObjIn) -> bool:
-        """Updates the comment details of an order in 1C with PIB, phone, telegram ID, TTN and status."""
+        """Updates the comment details of an order in 1C with PIB, phone, customer ID, TTN and status."""
         if not self.c_v8:
             log_sys("Failed to update order info: No connection to 1C.", 1)
             return False
@@ -359,11 +439,11 @@ class OrdersManager:
 
             s_pib = f"{c_customer.s_customerSurname} {c_customer.s_customerName} {c_customer.s_customerPatronymic}".strip()
             s_phone = c_customer.s_customerPhone
-            s_telegramId = c_customer.s_customerId
+            s_customerId = c_customer.s_customerId
             s_ttn = c_orderObjIn.s_TTN
             s_status = c_orderObjIn.s_status
 
-            s_newComment = f"{s_pib} {s_phone} {s_telegramId} {s_ttn} {s_status}"
+            s_newComment = f"{s_pib} {s_phone} {s_customerId} {s_ttn} {s_status}"
             c_orderObj1c.Комментарий = s_newComment
             c_orderObj1c.Write(self.c_v8.DocumentWriteMode.Write)
 
