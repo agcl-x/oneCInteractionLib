@@ -121,7 +121,9 @@ class Order:
         self,
         c_orderCustomerIn: Customer = None,
         l_orderItemsListIn: list = None,
-        n_orderCodeIn: int = 0
+        n_orderCodeIn: int = 0,
+        s_price_typeIn: str = "",
+        s_commentIn: str = ""
     ):
         self.c_orderCustomer = c_orderCustomerIn
         self.l_orderItemsList = l_orderItemsListIn if l_orderItemsListIn is not None else []
@@ -129,4 +131,6 @@ class Order:
         self.s_status = ""
         self.s_date = datetime.now().strftime("%H:%M %d.%m.%Y")
         self.n_orderCode = n_orderCodeIn
+        self.s_price_type = s_price_typeIn
+        self.s_comment = s_commentIn
 

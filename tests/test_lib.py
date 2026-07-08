@@ -69,8 +69,14 @@ try:
     assert c_item_variety_named.c_variety == c_var_named_chars
     print("Success: New Variety-based OrderItems instantiated and verified.")
     
-    c_order = Order(c_orderCustomerIn=c_cust, l_orderItemsListIn=[c_item_variety_named], n_orderCodeIn=1001)
-    print("Success: Order instantiated with variety-based items.")
+    c_order = Order(c_orderCustomerIn=c_cust, l_orderItemsListIn=[c_item_variety_named], n_orderCodeIn=1001, s_price_typeIn="Оптовая", s_commentIn="Test comment")
+    assert c_order.s_price_type == "Оптовая", f"Expected 'Оптовая', got '{c_order.s_price_type}'"
+    assert c_order.s_comment == "Test comment", f"Expected 'Test comment', got '{c_order.s_comment}'"
+    
+    c_order_default = Order(c_orderCustomerIn=c_cust, l_orderItemsListIn=[c_item_variety_named], n_orderCodeIn=1002)
+    assert c_order_default.s_price_type == "", f"Expected default '', got '{c_order_default.s_price_type}'"
+    assert c_order_default.s_comment == "", f"Expected default '', got '{c_order_default.s_comment}'"
+    print("Success: Order instantiated with variety-based items, price type and comment verified.")
     
     c_var = c_var_no_char
     
