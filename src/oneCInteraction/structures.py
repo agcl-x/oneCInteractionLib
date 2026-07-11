@@ -134,3 +134,19 @@ class Order:
         self.s_price_type = s_price_typeIn
         self.s_comment = s_commentIn
 
+
+class DiscountGroup:
+    def __init__(
+        self,
+        s_nameIn: str,
+        s_document_numberIn: str,
+        s_discount_type_codeIn: str,
+        n_discount_percentIn: float,
+        l_nomenclaturesIn: list
+    ):
+        self.s_name = s_nameIn
+        self.s_document_number = s_document_numberIn
+        self.s_discount_type_code = s_discount_type_codeIn
+        self.n_discount_percent = float(n_discount_percentIn)
+        self.l_nomenclatures = l_nomenclaturesIn
+

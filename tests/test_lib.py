@@ -10,7 +10,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 try:
     from datetime import datetime
-    from oneCInteraction import Connection, Customer, Order, OrderItem, Nomenclature, Variety, Price, Characteristic, Group, Category
+    from oneCInteraction import Connection, Customer, Order, OrderItem, Nomenclature, Variety, Price, Characteristic, Group, Category, DiscountGroup
     from oneCInteraction.log import log_sys, LOGS_DIR
     
     print("Success: Imported Connection and all structures successfully from oneCInteraction!")
@@ -86,6 +86,21 @@ try:
     c_cat = Category(s_categoryNameIn="Shoes", l_nomenclaturesIn=[c_nom])
     print("Success: Category instantiated.")
     
+    # Test DiscountGroup instantiation
+    c_dg = DiscountGroup(
+        s_nameIn="Гуртова акція",
+        s_document_numberIn="DOC001",
+        s_discount_type_codeIn="B2B",
+        n_discount_percentIn=10.0,
+        l_nomenclaturesIn=[{"code": "ART001", "name": "Product 1", "uuid": "uuid1", "char_name": None}]
+    )
+    assert c_dg.s_name == "Гуртова акція"
+    assert c_dg.s_document_number == "DOC001"
+    assert c_dg.s_discount_type_code == "B2B"
+    assert c_dg.n_discount_percent == 10.0
+    assert len(c_dg.l_nomenclatures) == 1
+    print("Success: DiscountGroup instantiated.")
+    
     c_conn = Connection(s_oneCDatabasePathIn="test_db", s_usernameIn="admin", s_passwordIn="pass")
     print("Success: Connection class instantiated.")
     
@@ -95,7 +110,13 @@ try:
     assert c_conn.characteristics is not None
     assert c_conn.categories is not None
     assert c_conn.customers is not None
+    assert c_conn.discounts is not None
     print("Success: Checked all composition managers exist.")
+    
+    # Test DiscountsManager when connection is not active
+    discounts_res = c_conn.discounts.get_active_groups()
+    assert isinstance(discounts_res, list) and len(discounts_res) == 0, f"Expected empty list since connection is not active, got {discounts_res}"
+    print("Success: DiscountsManager.get_active_groups tested with no active connection.")
 
     # Test CustomersManager when connection is not active
     cust_res = c_conn.customers.get("CUST001")

@@ -8,7 +8,8 @@ from .structures import (
     Category,
     Customer,
     OrderItem,
-    Order
+    Order,
+    DiscountGroup
 )
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     'Category',
     'Customer',
     'OrderItem',
-    'Order'
+    'Order',
+    'DiscountGroup'
 ]

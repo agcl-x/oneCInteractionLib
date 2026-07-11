@@ -8,6 +8,7 @@ from .orders import OrdersManager
 from .characteristics import CharacteristicsManager
 from .categories import CategoriesManager
 from .customers import CustomersManager
+from .discounts import DiscountsManager
 
 
 class Connection:
@@ -39,6 +40,7 @@ class Connection:
         self.characteristics = CharacteristicsManager(self)
         self.categories = CategoriesManager(self)
         self.customers = CustomersManager(self)
+        self.discounts = DiscountsManager(self)
 
     def initiate_connection(self) -> None:
         """Establishes COM connection to 1C and caches price type references."""
