@@ -40,6 +40,7 @@ class DiscountsManager:
                     РегистрСведений.СкидкиНаценкиНоменклатуры.СрезПоследних(&CurrentDate, ) КАК Скидки
                 WHERE
                     Скидки.ПроцентСкидкиНаценки > 0
+                    AND (Скидки.Регистратор.ДатаОкончания = DATETIME(1, 1, 1) OR Скидки.Регистратор.ДатаОкончания >= &CurrentDate)
             """
             
             if s_discount_type_codeIn is not None:
