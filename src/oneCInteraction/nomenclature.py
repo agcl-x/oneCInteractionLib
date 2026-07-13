@@ -166,6 +166,7 @@ class NomenclatureManager:
                 return []
 
             d_batchDetails = self._fetch_batch_details(l_productRefs)
+            d_batchArrivals = self._fetch_batch_last_arrivals(l_productRefs)
             
             l_allCharRefs = []
             for s_productUuid in d_batchDetails:
@@ -220,7 +221,8 @@ class NomenclatureManager:
                         s_unitIn=d_item["unit"],
                         s_uuidIn=s_productUuid,
                         s_codeIn=self.c_v8.String(d_item["code"]),
-                        l_imagesIn=d_batchImages.get(s_productUuid, [])
+                        l_imagesIn=d_batchImages.get(s_productUuid, []),
+                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid)
                     ))
 
             log_sys(f"Successfully processed {len(l_nomenclatures)} items in search mode.")
@@ -350,6 +352,47 @@ class NomenclatureManager:
             log_sys(f"Error in batch query execution: {e}", 1)
 
         return d_batchData
+
+    def _fetch_batch_last_arrivals(self, l_productRefsIn: list) -> dict:
+        """Batch fetches the last physical arrival date for a list of product references."""
+        if not self.c_v8 or not l_productRefsIn:
+            return {}
+
+        log_sys(f"Batch fetching last arrival dates for {len(l_productRefsIn)} items...")
+        
+        c_productRefsV8 = self.c_v8.NewObject("ValueList")
+        for c_ref in l_productRefsIn:
+            c_productRefsV8.Add(c_ref)
+
+        c_query = self.c_v8.NewObject("Query")
+        c_query.Text = """
+            SELECT
+                ТоварыНаСкладах.Номенклатура AS ProductRef,
+                MAX(ТоварыНаСкладах.Период) AS LastArrivalDate
+            FROM
+                РегистрНакопления.ТоварыНаСкладах AS ТоварыНаСкладах
+            WHERE
+                ТоварыНаСкладах.Номенклатура В (&ProductRefs)
+                AND ТоварыНаСкладах.ВидДвижения = ЗНАЧЕНИЕ(ВидДвиженияНакопления.Приход)
+            GROUP BY
+                ТоварыНаСкладах.Номенклатура
+        """
+        c_query.SetParameter("ProductRefs", c_productRefsV8)
+
+        d_arrivals = {}
+        try:
+            c_result = c_query.Execute()
+            if c_result is not None and not c_result.IsEmpty():
+                c_sel = c_result.Select()
+                while c_sel.Next():
+                    s_productUuid = self.c_v8.String(c_sel.ProductRef.UUID())
+                    dt_last_arrival = _parse_1c_date(c_sel.LastArrivalDate)
+                    if dt_last_arrival:
+                        d_arrivals[s_productUuid] = dt_last_arrival
+        except Exception as e:
+            log_sys(f"Error in batch last arrivals query execution: {e}", 1)
+
+        return d_arrivals
 
     def _fetch_batch_image_metadata(self, l_productRefsIn: list) -> dict:
         """Batch fetches image references (UUIDs) for a list of product references."""
@@ -532,6 +575,28 @@ class NomenclatureManager:
                 )
             ))
 
+        # Fetch last arrival date
+        dt_last_arrival = None
+        try:
+            c_arrivalQuery = self.c_v8.NewObject("Query")
+            c_arrivalQuery.Text = """
+                SELECT
+                    MAX(ТоварыНаСкладах.Период) AS LastArrivalDate
+                FROM
+                    РегистрНакопления.ТоварыНаСкладах AS ТоварыНаСкладах
+                WHERE
+                    ТоварыНаСкладах.Номенклатура = &ProductRef
+                    AND ТоварыНаСкладах.ВидДвижения = ЗНАЧЕНИЕ(ВидДвиженияНакопления.Приход)
+            """
+            c_arrivalQuery.SetParameter("ProductRef", c_productRefIn)
+            c_arrivalResult = c_arrivalQuery.Execute()
+            if c_arrivalResult is not None and not c_arrivalResult.IsEmpty():
+                c_arrivalSel = c_arrivalResult.Select()
+                if c_arrivalSel.Next():
+                    dt_last_arrival = _parse_1c_date(c_arrivalSel.LastArrivalDate)
+        except Exception as e:
+            log_sys(f"Error fetching last arrival date for {s_articleIn}: {e}", 1)
+
         return structures.Nomenclature(
             s_nameIn=s_nameIn,
             s_articleIn=s_articleIn,
@@ -540,7 +605,8 @@ class NomenclatureManager:
             s_unitIn=s_unitIn,
             s_uuidIn=s_uuidIn,
             s_codeIn=s_codeIn,
-            s_parent_uuidIn=s_parent_uuidIn
+            s_parent_uuidIn=s_parent_uuidIn,
+            dt_last_arrivalIn=dt_last_arrival
         )
 
     def get_images(self, c_productObjIn, s_imageDirIn: str = None) -> list:
@@ -671,6 +737,7 @@ class NomenclatureManager:
 
 
             d_batchDetails = self._fetch_batch_details(l_productRefs)
+            d_batchArrivals = self._fetch_batch_last_arrivals(l_productRefs)
             
 
             l_allCharRefs = []
@@ -727,8 +794,10 @@ class NomenclatureManager:
                         l_varietyIn=l_varieties,
                         s_descriptionIn=d_item["description"],
                         s_unitIn=d_item["unit"],
+                        s_uuidIn=s_productUuid,
                         s_codeIn=self.c_v8.String(d_item["code"]),
-                        l_imagesIn=d_batchImages.get(s_productUuid, [])
+                        l_imagesIn=d_batchImages.get(s_productUuid, []),
+                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid)
                     ))
 
             log_sys(f"Successfully processed {len(l_nomenclatures)} items in batch mode.")
@@ -824,6 +893,7 @@ class NomenclatureManager:
 
 
             d_batchDetails = self._fetch_batch_details(l_productRefs)
+            d_batchArrivals = self._fetch_batch_last_arrivals(l_productRefs)
             
 
             l_allCharRefs = []
@@ -880,8 +950,10 @@ class NomenclatureManager:
                         l_varietyIn=l_varieties,
                         s_descriptionIn=d_item["description"],
                         s_unitIn=d_item["unit"],
+                        s_uuidIn=s_productUuid,
                         s_codeIn=self.c_v8.String(d_item["code"]),
-                        l_imagesIn=d_batchImages.get(s_productUuid, [])
+                        l_imagesIn=d_batchImages.get(s_productUuid, []),
+                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid)
                     ))
 
             log_sys(f"Successfully processed {len(l_nomenclatures)} items in batch mode.")

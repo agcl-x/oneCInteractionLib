@@ -53,7 +53,7 @@ def __init__(self, s_oneCDatabasePathIn: str, s_usernameIn: str, s_passwordIn: s
 - `s_warehouse_code` (str): 1C warehouse code for new orders.
 - `s_counteragent_code` (str): 1C counteragent (customer) code for new orders.
 - `s_organisation_code` (str): 1C organization code for new orders.
-- `sl_price_types` (list): List of price type names to cache automatically (defaults to `["Розничная", "Оптовая"]`).
+- `sl_price_types` (list): List of price type names to cache automatically (defaults to `["Розничная", "Оптовая", "Закупочная"]`).
 - `c_v8`: The active 1C COM connection object (equals `None` if not connected).
 
 #### Methods:
@@ -77,6 +77,7 @@ Represents a product.
 - `s_uuid` (str): Unique identifier (UUID) of the product in 1C.
 - `s_code` (str): 1C product code.
 - `l_images` (list): List of image UUIDs associated with the product in 1C.
+- `dt_last_arrival` (datetime): Date of the last physical arrival of the product to the warehouse from 1C.
 
 #### `Price`
 Represents a price with its value, assignment date, and type.
@@ -138,6 +139,8 @@ A buyer's order.
 - `s_status` (str): Status of the order in 1C.
 - `s_date` (str): Order creation date (automatically generated).
 - `n_orderCode` (str / int): Order number in 1C.
+- `s_price_type` (str): Price type name used for the order (e.g. `"Розничная"`, `"Оптовая"`, `"Закупочная"`).
+- `s_comment` (str): Additional comment/notes for the order (often parsed to extract Telegram ID).
 
 Calling `str(order_obj)` returns a nicely formatted HTML string suitable for sending to a Telegram bot.
 
@@ -155,13 +158,15 @@ Represents a group of nomenclature discounts.
 Defined in [nomenclature.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/nomenclature.py).
 
 - `get(s_articleIn: str = "", s_nameIn: str = "", s_codeIn: str = "") -> Nomenclature | None`
-  Searches for and returns a product by its article, name, or code. Fetches retail/wholesale prices, stock balances by warehouses, and characteristics.
+  Searches for and returns a product by its article, name, or code. Fetches retail, wholesale, and purchase prices, stock balances by warehouses, characteristics, and the parent group's UUID (`s_parent_uuid`).
+- `search(s_queryIn: str, s_searchByIn: str = "all") -> list`
+  Searches for nomenclature items by a query string matching the name, article, code, or all of them. Returns a list of `Nomenclature` objects (without full detailed price/stock breakdown, but containing basic fields).
 - `get_images(c_productObjIn: Nomenclature, s_imageDirIn: str = None) -> list`
   Downloads all attached images for a product from 1C. Saves them in the specified directory `s_imageDirIn` (defaults to `data/images`). Returns a list of the saved filenames (e.g., `["[uuid]_0.jpg"]`).
 - `get_by_group(c_groupRefIn) -> list`
   Batch fetches all products within a specific 1C group. Using optimized COM queries, this method minimizes DB requests and operates significantly faster than calling `get()` sequentially in a loop.
-- `get_by_category(c_categoryIn, s_attributeNameIn: str = "ВидНоменклатуры", s_catalogNameIn: str = "ВидыНоменклатуры") -> list`
-  Batch fetches all products within a specific 1C category (by default using the `ВидНоменклатуры` attribute in the `ВидыНоменклатуры` catalog). `c_categoryIn` can be a COM reference object or a string representing the category name.
+- `get_by_category(c_categoryIn) -> list`
+  Batch fetches all products within a specific 1C category. `c_categoryIn` can be a COM reference object or a string representing the category name (searched within `Справочник.КатегорииОбъектов`).
 
 ---
 
@@ -181,9 +186,9 @@ Defined in [groups.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/
 Defined in [categories.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/categories.py).
 
 - `get(s_codeIn: str = "", s_nameIn: str = "") -> Category | None`
-  Finds a single Category by its code or name in the `ВидыНоменклатуры` catalog.
+  Finds a single Category by its code or name in the `КатегорииОбъектов` (Object Categories) catalog.
 - `create(s_nameIn: str) -> Category | None`
-  Creates a new Category with the specified name in `Справочник.ВидыНоменклатуры` and returns it.
+  Creates a new Category with the specified name in `Справочник.КатегорииОбъектов` and returns it.
 
 ---
 
@@ -205,12 +210,12 @@ Defined in [orders.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/
 - `push(c_orderObjIn: Order) -> str`
   Creates a new `"Заказ покупателя"` (Buyer's Order) document in 1C.
   - Automatically queries the warehouse, counteragent, and organization based on codes specified in the `Connection` object.
-  - Sets the retail price type, document currency (Hryvnia, code `"980"`), and organization's primary bank account.
-  - Adds products from the order, queries the exact price for the specific characteristic selected, and computes totals.
+  - Sets the price type (defaulting to `"Розничная"` or using `s_price_type` from the order), document currency (Hryvnia, code `"980"`), and organization's primary bank account.
+  - Adds products from the order, queries/compares the exact price for the specific characteristic selected (using `s_price_type` to determine retail, wholesale, or purchase price), and computes totals.
   - Attempts to post the document (`Posting`). If posting fails, it writes the document in draft/save mode (`Write`).
   - Returns the number of the created document in 1C (or an empty string on error).
 - `get(s_codeIn: str) -> Order | None`
-  Retrieves a buyer's order by its 1C document number and parses it into an `Order` object. The comment field is parsed to retrieve the Telegram ID.
+  Retrieves a buyer's order by its 1C document number and parses it into an `Order` object. The comment field is parsed to retrieve the Telegram ID, and the price type is retrieved.
 - `get_today() -> list`
   Returns a list of all today's orders created for the configured bot counteragent (filtered by current date and counteragent code).
 - `update_info(c_orderObjIn: Order) -> bool`

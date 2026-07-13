@@ -81,7 +81,17 @@ try:
     c_var = c_var_no_char
     
     c_nom = Nomenclature(s_nameIn="Product 1", s_articleIn="ART001", l_varietyIn=[c_var])
-    print("Success: Nomenclature instantiated.")
+    assert c_nom.dt_last_arrival is None
+    
+    dt_now = datetime.now()
+    c_nom_with_arrival = Nomenclature(
+        s_nameIn="Product 2",
+        s_articleIn="ART002",
+        l_varietyIn=[c_var],
+        dt_last_arrivalIn=dt_now
+    )
+    assert c_nom_with_arrival.dt_last_arrival == dt_now
+    print("Success: Nomenclature instantiated and verified with dt_last_arrival.")
     
     c_cat = Category(s_categoryNameIn="Shoes", l_nomenclaturesIn=[c_nom])
     print("Success: Category instantiated.")

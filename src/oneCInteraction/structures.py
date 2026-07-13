@@ -11,7 +11,8 @@ class Nomenclature:
         s_parent_uuidIn: str = "",
         s_uuidIn: str = "",
         s_codeIn: str = "",
-        l_imagesIn: list = None
+        l_imagesIn: list = None,
+        dt_last_arrivalIn: datetime = None
     ):
         self.s_name = s_nameIn
         self.s_article = s_articleIn
@@ -22,6 +23,7 @@ class Nomenclature:
         self.s_uuid = s_uuidIn
         self.s_code = s_codeIn
         self.l_images = l_imagesIn if l_imagesIn is not None else []
+        self.dt_last_arrival = dt_last_arrivalIn
 
 class Price:
     def __init__(self, n_value: float, dt_assigned: datetime = None, s_type: str = ""):
