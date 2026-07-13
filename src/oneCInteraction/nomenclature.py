@@ -54,7 +54,8 @@ class NomenclatureManager:
                     Артикул AS Article, 
                     ISNULL(ДополнительноеОписаниеНоменклатуры, "") AS FullDescription,
                     ISNULL(НаименованиеПолное, "") AS FullName,
-                    ISNULL(ЕдиницаХраненияОстатков.Наименование, "шт.") AS Unit
+                    ISNULL(ЕдиницаХраненияОстатков.Наименование, "шт.") AS Unit,
+                    Родитель.Ссылка AS ParentRef
                 FROM Справочник.Номенклатура
                 WHERE ({" OR ".join(where_clauses)}) AND ЭтоГруппа = ЛОЖЬ AND ПометкаУдаления = ЛОЖЬ
             """
@@ -71,6 +72,8 @@ class NomenclatureManager:
             if not s_description:
                 s_description = self.c_v8.String(c_selection.FullName)
 
+            s_parent_uuid = self.c_v8.String(c_selection.ParentRef.UUID()) if not c_selection.ParentRef.IsEmpty() else ""
+
             log_sys(f"Nomenclature found: Name='{c_selection.Name}', Article='{c_selection.Article}'")
             return self._fetch_details(
                 c_selection.Ref, 
@@ -78,8 +81,9 @@ class NomenclatureManager:
                 c_selection.Article, 
                 s_description,
                 getattr(c_selection, "Unit", "шт."),
-                self.c_v8.String(c_selection.Ref.UUID()),
-                self.c_v8.String(c_selection.Code)
+                self.c_v8.String(c_selection.Ref.UUID()), 
+                self.c_v8.String(c_selection.Code),
+                s_parent_uuidIn=s_parent_uuid
             )
         except Exception as e:
             log_sys(f"Error in NomenclatureManager.get: {e}", 1)
@@ -389,7 +393,8 @@ class NomenclatureManager:
         s_descriptionIn: str,
         s_unitIn: str = "шт.",
         s_uuidIn: str = "",
-        s_codeIn: str = ""
+        s_codeIn: str = "",
+        s_parent_uuidIn: str = ""
     ):
         """Fetches details (prices, stock, characteristics) for a single Nomenclature."""
         c_retailPtRef = self.c_connection.get_price_type_ref("Розничная")
@@ -534,7 +539,8 @@ class NomenclatureManager:
             s_descriptionIn=s_descriptionIn,
             s_unitIn=s_unitIn,
             s_uuidIn=s_uuidIn,
-            s_codeIn=s_codeIn
+            s_codeIn=s_codeIn,
+            s_parent_uuidIn=s_parent_uuidIn
         )
 
     def get_images(self, c_productObjIn, s_imageDirIn: str = None) -> list:
