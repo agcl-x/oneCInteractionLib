@@ -32,6 +32,7 @@ The library is built on the principle of composition: the main `Connection` clas
 - `Connection.characteristics` (`CharacteristicsManager`) — reads properties of product variants.
 - `Connection.orders` (`OrdersManager`) — handles creation and updates of customer orders.
 - `Connection.customers` (`CustomersManager`) — manages customers/counterparties.
+- `Connection.discounts` (`DiscountsManager`) — manages discount groups and active nomenclature discounts.
 
 ---
 
@@ -140,6 +141,14 @@ A buyer's order.
 
 Calling `str(order_obj)` returns a nicely formatted HTML string suitable for sending to a Telegram bot.
 
+#### `DiscountGroup`
+Represents a group of nomenclature discounts.
+- `s_name` (str): Discount group name or comment.
+- `s_document_number` (str): Number of the document that set the discount in 1C.
+- `s_discount_type_code` (str): Discount type code (e.g. `"B2B"`).
+- `n_discount_percent` (float): Discount percentage.
+- `l_nomenclatures` (list of dict): List of products in the discount group (each product is a dict with keys `"code"`, `"name"`, `"uuid"`, and `"char_name"`).
+
 ---
 
 ### 3. Nomenclature Manager `NomenclatureManager` (`Connection.nomenclature`)
@@ -224,7 +233,18 @@ Defined in [customers.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionL
 
 ---
 
-### 9. Logging (`log.py`)
+### 9. Discounts Manager `DiscountsManager` (`Connection.discounts`)
+Defined in [discounts.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/discounts.py).
+
+- `get_active_groups(s_discount_type_codeIn: str = None) -> list`
+  Retrieves active discount groups and returns them as a list of `DiscountGroup` objects.
+  - If `s_discount_type_codeIn` is specified, only returns groups matching that discount type code.
+  - Queries active discounts from the `СкидкиНаценкиНоменклатуры` information register.
+  - Only retrieves discounts where the percentage is greater than zero and the registrar document's end date (`ДатаОкончания`) is either not set or is greater than or equal to the current date.
+
+---
+
+### 10. Logging (`log.py`)
 Defined in [log.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/log.py).
 
 All actions are logged automatically. The library resolves the root directory of the project that imported it and stores log files in the relative path `log/system/[calling_module_name].log`.
