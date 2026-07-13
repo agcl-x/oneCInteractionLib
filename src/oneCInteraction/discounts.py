@@ -10,16 +10,22 @@ class DiscountsManager:
     def c_v8(self):
         return self.c_connection.c_v8
 
-    def get_active_groups(self) -> list:
-        """Retrieves and groups all active nomenclature discounts into DiscountGroup structures."""
+    def get_active_groups(self, s_discount_type_codeIn: str = None) -> list:
+        """Retrieves and groups active nomenclature discounts into DiscountGroup structures.
+        If s_discount_type_codeIn is specified, only returns groups matching that discount type code.
+        """
         if not self.c_v8:
             log_sys("Failed to get active discount groups: No connection to 1C.", 1)
             return []
 
         try:
-            log_sys("Fetching active nomenclature discounts from 1C...")
+            if s_discount_type_codeIn is not None:
+                log_sys(f"Fetching active nomenclature discounts from 1C filtered by type code: '{s_discount_type_codeIn}'...")
+            else:
+                log_sys("Fetching active nomenclature discounts from 1C...")
             query = self.c_v8.NewObject("Query")
-            query.Text = """
+            
+            query_text = """
                 SELECT
                     Скидки.Регистратор.Номер КАК DocNumber,
                     ISNULL(Скидки.Регистратор.ТипСкидкиНаценки.Наименование, "Знижка") КАК DiscountName,
@@ -36,8 +42,15 @@ class DiscountsManager:
                     Скидки.ПроцентСкидкиНаценки > 0
             """
             
+            if s_discount_type_codeIn is not None:
+                query_text += "\n                    AND Скидки.Регистратор.ТипСкидкиНаценки.Код = &DiscountTypeCode"
+                
+            query.Text = query_text
+            
             c_currDate = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
             query.SetParameter("CurrentDate", c_currDate)
+            if s_discount_type_codeIn is not None:
+                query.SetParameter("DiscountTypeCode", s_discount_type_codeIn)
 
             c_result = query.Execute()
             if c_result is None or c_result.IsEmpty():

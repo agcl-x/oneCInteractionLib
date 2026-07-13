@@ -116,7 +116,11 @@ try:
     # Test DiscountsManager when connection is not active
     discounts_res = c_conn.discounts.get_active_groups()
     assert isinstance(discounts_res, list) and len(discounts_res) == 0, f"Expected empty list since connection is not active, got {discounts_res}"
-    print("Success: DiscountsManager.get_active_groups tested with no active connection.")
+    
+    discounts_res_filtered = c_conn.discounts.get_active_groups("B2B")
+    assert isinstance(discounts_res_filtered, list) and len(discounts_res_filtered) == 0, f"Expected empty list since connection is not active, got {discounts_res_filtered}"
+    
+    print("Success: DiscountsManager.get_active_groups tested with no active connection (with and without s_discount_type_codeIn parameter).")
 
     # Test CustomersManager when connection is not active
     cust_res = c_conn.customers.get("CUST001")
