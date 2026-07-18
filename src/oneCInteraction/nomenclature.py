@@ -167,6 +167,7 @@ class NomenclatureManager:
 
             d_batchDetails = self._fetch_batch_details(l_productRefs)
             d_batchArrivals = self._fetch_batch_last_arrivals(l_productRefs)
+            d_batchProperties = self._fetch_batch_properties(l_productRefs)
             
             l_allCharRefs = []
             for s_productUuid in d_batchDetails:
@@ -222,7 +223,8 @@ class NomenclatureManager:
                         s_uuidIn=s_productUuid,
                         s_codeIn=self.c_v8.String(d_item["code"]),
                         l_imagesIn=d_batchImages.get(s_productUuid, []),
-                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid)
+                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid),
+                        l_propertiesIn=d_batchProperties.get(s_productUuid, [])
                     ))
 
             log_sys(f"Successfully processed {len(l_nomenclatures)} items in search mode.")
@@ -230,6 +232,47 @@ class NomenclatureManager:
         except Exception as e:
             log_sys(f"Error in NomenclatureManager.search (batch): {e}", 1)
             return []
+
+    def _fetch_batch_properties(self, l_productRefsIn: list) -> dict:
+        """Batch fetches properties and values for a list of product references."""
+        if not self.c_v8 or not l_productRefsIn:
+            return {}
+
+        log_sys(f"Batch fetching properties for {len(l_productRefsIn)} products...")
+        
+        c_productRefsV8 = self.c_v8.NewObject("ValueList")
+        for c_ref in l_productRefsIn:
+            if c_ref and not c_ref.IsEmpty():
+                c_productRefsV8.Add(c_ref)
+
+        d_productProps = {} # {product_uuid: [Property]}
+
+        if c_productRefsV8.Count() > 0:
+            try:
+                c_propQuery = self.c_v8.NewObject("Query")
+                c_propQuery.Text = """
+                    SELECT
+                        Properties.Объект AS ProductRef,
+                        Properties.Свойство.Наименование AS PropName,
+                        Properties.Значение.Наименование AS ValName
+                    FROM
+                        РегистрСведений.ЗначенияСвойствОбъектов AS Properties
+                    WHERE
+                        Properties.Объект В (&ProductRefs)
+                """
+                c_propQuery.SetParameter("ProductRefs", c_productRefsV8)
+                c_propRes = c_propQuery.Execute()
+                if c_propRes is not None and not c_propRes.IsEmpty():
+                    c_sel = c_propRes.Select()
+                    while c_sel.Next():
+                        s_uuid = self.c_v8.String(c_sel.ProductRef.UUID())
+                        if s_uuid not in d_productProps:
+                            d_productProps[s_uuid] = []
+                        d_productProps[s_uuid].append(structures.Property(c_sel.PropName, c_sel.ValName))
+            except Exception as e:
+                log_sys(f"Error batch fetching properties: {e}", 1)
+
+        return d_productProps
 
     def _fetch_batch_details(self, l_productRefsIn: list) -> dict:
         """Batch fetches prices and stock quantities for a list of product references."""
@@ -596,6 +639,27 @@ class NomenclatureManager:
                     dt_last_arrival = _parse_1c_date(c_arrivalSel.LastArrivalDate)
         except Exception as e:
             log_sys(f"Error fetching last arrival date for {s_articleIn}: {e}", 1)
+        # Fetch product properties
+        l_properties = []
+        try:
+            c_propQuery = self.c_v8.NewObject("Query")
+            c_propQuery.Text = """
+                SELECT
+                    Properties.Свойство.Наименование AS PropName,
+                    Properties.Значение.Наименование AS ValName
+                FROM
+                    РегистрСведений.ЗначенияСвойствОбъектов AS Properties
+                WHERE
+                    Properties.Объект = &ProductRef
+            """
+            c_propQuery.SetParameter("ProductRef", c_productRefIn)
+            c_propRes = c_propQuery.Execute()
+            if c_propRes is not None and not c_propRes.IsEmpty():
+                c_sel = c_propRes.Select()
+                while c_sel.Next():
+                    l_properties.append(structures.Property(c_sel.PropName, c_sel.ValName))
+        except Exception as e:
+            log_sys(f"Error fetching properties for {s_articleIn}: {e}", 1)
 
         return structures.Nomenclature(
             s_nameIn=s_nameIn,
@@ -606,7 +670,8 @@ class NomenclatureManager:
             s_uuidIn=s_uuidIn,
             s_codeIn=s_codeIn,
             s_parent_uuidIn=s_parent_uuidIn,
-            dt_last_arrivalIn=dt_last_arrival
+            dt_last_arrivalIn=dt_last_arrival,
+            l_propertiesIn=l_properties
         )
 
     def get_images(self, c_productObjIn, s_imageDirIn: str = None) -> list:
@@ -738,6 +803,7 @@ class NomenclatureManager:
 
             d_batchDetails = self._fetch_batch_details(l_productRefs)
             d_batchArrivals = self._fetch_batch_last_arrivals(l_productRefs)
+            d_batchProperties = self._fetch_batch_properties(l_productRefs)
             
 
             l_allCharRefs = []
@@ -797,7 +863,8 @@ class NomenclatureManager:
                         s_uuidIn=s_productUuid,
                         s_codeIn=self.c_v8.String(d_item["code"]),
                         l_imagesIn=d_batchImages.get(s_productUuid, []),
-                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid)
+                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid),
+                        l_propertiesIn=d_batchProperties.get(s_productUuid, [])
                     ))
 
             log_sys(f"Successfully processed {len(l_nomenclatures)} items in batch mode.")
@@ -894,6 +961,7 @@ class NomenclatureManager:
 
             d_batchDetails = self._fetch_batch_details(l_productRefs)
             d_batchArrivals = self._fetch_batch_last_arrivals(l_productRefs)
+            d_batchProperties = self._fetch_batch_properties(l_productRefs)
             
 
             l_allCharRefs = []
@@ -953,7 +1021,8 @@ class NomenclatureManager:
                         s_uuidIn=s_productUuid,
                         s_codeIn=self.c_v8.String(d_item["code"]),
                         l_imagesIn=d_batchImages.get(s_productUuid, []),
-                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid)
+                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid),
+                        l_propertiesIn=d_batchProperties.get(s_productUuid, [])
                     ))
 
             log_sys(f"Successfully processed {len(l_nomenclatures)} items in batch mode.")

@@ -12,7 +12,8 @@ class Nomenclature:
         s_uuidIn: str = "",
         s_codeIn: str = "",
         l_imagesIn: list = None,
-        dt_last_arrivalIn: datetime = None
+        dt_last_arrivalIn: datetime = None,
+        l_propertiesIn: list = None
     ):
         self.s_name = s_nameIn
         self.s_article = s_articleIn
@@ -24,6 +25,7 @@ class Nomenclature:
         self.s_code = s_codeIn
         self.l_images = l_imagesIn if l_imagesIn is not None else []
         self.dt_last_arrival = dt_last_arrivalIn
+        self.l_properties = l_propertiesIn if l_propertiesIn is not None else []
 
 class Price:
     def __init__(self, n_value: float, dt_assigned: datetime = None, s_type: str = ""):
@@ -54,6 +56,14 @@ class Characteristic:
     def __init__(self, s_nameIn: str, s_valueIn: str):
         self.s_name = s_nameIn
         self.s_value = s_valueIn
+
+class Property:
+    def __init__(self, s_nameIn: str, s_valueIn: str):
+        self.s_name = s_nameIn
+        self.s_value = s_valueIn
+
+    def __repr__(self):
+        return f"Property(name='{self.s_name}', value='{self.s_value}')"
 
 class Group:
     def __init__(

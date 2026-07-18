@@ -10,10 +10,16 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 try:
     from datetime import datetime
-    from oneCInteraction import Connection, Customer, Order, OrderItem, Nomenclature, Variety, Price, Characteristic, Group, Category, DiscountGroup
+    from oneCInteraction import Connection, Customer, Order, OrderItem, Nomenclature, Variety, Price, Characteristic, Property, Group, Category, DiscountGroup
     from oneCInteraction.log import log_sys, LOGS_DIR
     
     print("Success: Imported Connection and all structures successfully from oneCInteraction!")
+    
+    # Test Property structure
+    c_prop = Property("Колір", "Зелений")
+    assert c_prop.s_name == "Колір"
+    assert c_prop.s_value == "Зелений"
+    print("Success: Property instantiated.")
     
     # Test instantiation of structures
     c_cust = Customer(s_customerIdIn="123456789", s_customerNameIn="Ivan", s_customerSurnameIn="Ivanov", s_customerPhoneIn="+380991112233")
@@ -80,8 +86,10 @@ try:
     
     c_var = c_var_no_char
     
-    c_nom = Nomenclature(s_nameIn="Product 1", s_articleIn="ART001", l_varietyIn=[c_var])
+    c_nom = Nomenclature(s_nameIn="Product 1", s_articleIn="ART001", l_varietyIn=[c_var], l_propertiesIn=[c_prop])
     assert c_nom.dt_last_arrival is None
+    assert len(c_nom.l_properties) == 1
+    assert c_nom.l_properties[0].s_name == "Колір"
     
     dt_now = datetime.now()
     c_nom_with_arrival = Nomenclature(
@@ -121,7 +129,16 @@ try:
     assert c_conn.categories is not None
     assert c_conn.customers is not None
     assert c_conn.discounts is not None
-    print("Success: Checked all composition managers exist.")
+    assert c_conn.properties is not None
+    print("Success: Checked all composition managers exist (including properties).")
+    
+    # Test PropertiesManager when connection is not active
+    assert c_conn.properties.get_assigned_properties("ART001") == []
+    assert c_conn.properties.write("ART001", "Колір", "Зелений") is False
+    assert c_conn.properties.write_batch("ART001", [{"name": "Колір", "value": "Зелений"}]) == []
+    assert c_conn.properties.delete("ART001", "Колір") is False
+    assert c_conn.properties.get_all_definitions() == []
+    print("Success: PropertiesManager tested with no active connection.")
     
     # Test DiscountsManager when connection is not active
     discounts_res = c_conn.discounts.get_active_groups()

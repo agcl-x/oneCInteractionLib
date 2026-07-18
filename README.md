@@ -6,6 +6,7 @@ A modular Python library for interacting with «1C:Enterprise» databases via a 
 - **Full COM Connection Support** via `win32com`.
 - **Nomenclature and Categories Management**: retrieve group trees, batch load products, prices, and stock balances across warehouses.
 - **Product Characteristics**: read variant properties from information registers or parse text descriptions.
+- **Product Properties (Metadata)**: read and write general metadata (properties) of Nomenclature items to/from information registers.
 - **Images**: download product images directly from the 1C database to the local disk.
 - **Order Management**: create customer orders, track statuses, and update document comments with customer contact details.
 - **Smart Logging**: automatically creates log files in the directory of the host project importing the library.
@@ -33,6 +34,7 @@ The library is built on the principle of composition: the main `Connection` clas
 - `Connection.orders` (`OrdersManager`) — handles creation and updates of customer orders.
 - `Connection.customers` (`CustomersManager`) — manages customers/counterparties.
 - `Connection.discounts` (`DiscountsManager`) — manages discount groups and active nomenclature discounts.
+- `Connection.properties` (`PropertiesManager`) — manages reading and writing general product properties.
 
 ---
 
@@ -78,6 +80,7 @@ Represents a product.
 - `s_code` (str): 1C product code.
 - `l_images` (list): List of image UUIDs associated with the product in 1C.
 - `dt_last_arrival` (datetime): Date of the last physical arrival of the product to the warehouse from 1C.
+- `l_properties` (list of `Property`): List of general properties (metadata) of the product.
 
 #### `Price`
 Represents a price with its value, assignment date, and type.
@@ -97,6 +100,11 @@ Represents a product variant with specific prices and stock levels.
 A key-value pair for a variant property.
 - `s_name` (str): Property name (e.g., `"Color"`).
 - `s_value` (str): Property value (e.g., `"Red"`).
+
+#### `Property`
+A key-value pair for a product property (metadata).
+- `s_name` (str): Property name (e.g., `"Material"`).
+- `s_value` (str): Property value (e.g., `"Cotton"`).
 
 #### `Group`
 A product group (category).
@@ -249,7 +257,23 @@ Defined in [discounts.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionL
 
 ---
 
-### 10. Logging (`log.py`)
+### 10. Properties Manager `PropertiesManager` (`Connection.properties`)
+Defined in [properties.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/properties.py).
+
+- `write(self, c_productIn, s_propertyNameOrCodeIn: str, s_propertyValueIn: str) -> bool`
+  Writes or updates a single property value for a product (Nomenclature item).
+- `write_batch(self, c_productIn, l_propertiesIn: list, b_forceIn: bool = False) -> list`
+  Writes/updates multiple properties for a product using a single 1C RecordSet. `l_propertiesIn` can be a list of `Property` objects or dicts `{"name": "...", "value": "..."}`.
+- `get_assigned_properties(self, c_productIn) -> list`
+  Returns a list of `Property` objects assigned to the specified product.
+- `delete(self, c_productIn, s_propertyNameOrCodeIn: str) -> bool`
+  Removes a specific property from a product in 1C register.
+- `get_all_definitions(self) -> list`
+  Retrieves definitions of all active properties in 1C.
+
+---
+
+### 11. Logging (`log.py`)
 Defined in [log.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/log.py).
 
 All actions are logged automatically. The library resolves the root directory of the project that imported it and stores log files in the relative path `log/system/[calling_module_name].log`.
