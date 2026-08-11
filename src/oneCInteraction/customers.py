@@ -210,6 +210,18 @@ class CustomersManager:
                     c_orgRef = self.c_v8.Catalogs.Организации.FindByCode(self.c_connection.s_organisation_code)
                     if not c_orgRef.IsEmpty():
                         c_contract.Организация = c_orgRef
+                    else:
+                        log_sys(f"Organization {self.c_connection.s_organisation_code} not found in Catalogs.Организации", 1)
+                        try:
+                            c_orgRef = self.c_v8.Справочники.Организации.FindByCode(self.c_connection.s_organisation_code)
+                            if not c_orgRef.IsEmpty():
+                                c_contract.Организация = c_orgRef
+                            else:
+                                log_sys(f"Organization {self.c_connection.s_organisation_code} not found in Справочники.Организации", 1)
+                        except Exception:
+                            log_sys("Exception finding organization via Справочники", 1)
+                else:
+                    log_sys("Organization code not provided in config", 1)
 
                 # Contract type / Вид договора
                 try:
@@ -247,10 +259,24 @@ class CustomersManager:
 
                 try:
                     c_currencyRef = self.c_v8.Catalogs.Валюты.FindByCode("980")
-                    if not c_currencyRef.IsEmpty():
+                    if c_currencyRef.IsEmpty():
+                        log_sys("Currency 980 not found in Catalogs.Валюты", 1)
+                        c_currencyRef = self.c_v8.Справочники.Валюты.FindByCode("980")
+                    
+                    if c_currencyRef.IsEmpty():
+                        log_sys("Currency 980 not found in Справочники.Валюты. Contract might fail to write.", 1)
+                    else:
                         c_contract.ВалютаВзаиморасчетов = c_currencyRef
+                except Exception as e:
+                    log_sys(f"Exception setting currency: {e}", 1)
+
+                try:
+                    c_contract.ВедениеВзаиморасчетов = self.c_v8.Enums.ВедениеВзаиморасчетовПоДоговорам.ПоДоговоруВЦелом
                 except Exception:
-                    pass
+                    try:
+                        c_contract.ВедениеВзаиморасчетов = self.c_v8.Перечисления.ВедениеВзаиморасчетовПоДоговорам.ПоДоговоруВЦелом
+                    except Exception:
+                        pass
 
                 c_contract.Write()
                 
