@@ -106,7 +106,8 @@ class Customer:
         s_customerPatronymicIn: str = "",
         s_customerPhoneIn: str = "",
         s_customerAddressIn: str = "",
-        s_customerCodeIn: str = ""
+        s_customerCodeIn: str = "",
+        s_roleIn: str = ""
     ):
         self.s_customerId = s_customerIdIn
         self.s_customerName = s_customerNameIn
@@ -115,17 +116,20 @@ class Customer:
         self.s_customerPhone = s_customerPhoneIn
         self.s_customerAddress = s_customerAddressIn
         self.s_customerCode = s_customerCodeIn
+        self.s_role = s_roleIn
 
 class OrderItem:
     def __init__(
         self,
         s_productCodeIn: str,
         c_varietyIn: Variety = None,
-        n_productCountIn: int = 1
+        n_productCountIn: int = 1,
+        s_productNameIn: str = ""
     ):
         self.s_productCode = s_productCodeIn
         self.c_variety = c_varietyIn
         self.n_productCount = n_productCountIn
+        self.s_productName = s_productNameIn
 
 
 class Order:

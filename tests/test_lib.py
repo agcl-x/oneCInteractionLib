@@ -67,9 +67,11 @@ try:
     # New Variety-based construction
     c_item_variety_no_char = OrderItem(s_productCodeIn="ART001", c_varietyIn=c_var_no_char, n_productCountIn=1)
     assert c_item_variety_no_char.c_variety == c_var_no_char
+    assert c_item_variety_no_char.s_productName == "", f"Expected default empty product name, got '{c_item_variety_no_char.s_productName}'"
     
-    c_item_variety_generic = OrderItem(s_productCodeIn="ART001", c_varietyIn=c_var_generic_char, n_productCountIn=2)
+    c_item_variety_generic = OrderItem(s_productCodeIn="ART001", c_varietyIn=c_var_generic_char, n_productCountIn=2, s_productNameIn="Двері вхідні")
     assert c_item_variety_generic.c_variety == c_var_generic_char
+    assert c_item_variety_generic.s_productName == "Двері вхідні", f"Expected 'Двері вхідні', got '{c_item_variety_generic.s_productName}'"
     
     c_item_variety_named = OrderItem(s_productCodeIn="ART001", c_varietyIn=c_var_named_chars, n_productCountIn=5)
     assert c_item_variety_named.c_variety == c_var_named_chars

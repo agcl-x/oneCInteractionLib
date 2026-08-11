@@ -22,6 +22,15 @@ class CustomersManager:
             log_sys("Creating new customer/counterparty in 1C...")
             c_newCustomer = self.c_v8.Catalogs.Контрагенты.CreateItem()
 
+            # Set counteragent legal type to Physical Person / Individual
+            try:
+                c_newCustomer.ЮридическоеФизическоеЛицо = self.c_v8.Enums.ЮридическоеФизическоеЛицо.ФизическоеЛицо
+            except Exception:
+                try:
+                    c_newCustomer.ЮридическоеФизическоеЛицо = self.c_v8.Перечисления.ЮридическоеФизическоеЛицо.ФизическоеЛицо
+                except Exception:
+                    log_sys("Could not set counteragent legal type", 1)
+
             # Construct PIB/Name
             parts = [c_customerIn.s_customerSurname, c_customerIn.s_customerName, c_customerIn.s_customerPatronymic]
             s_pib = " ".join([p for p in parts if p]).strip()
@@ -59,6 +68,19 @@ class CustomersManager:
                 c_newCustomer.Комментарий = s_comment
             except Exception:
                 pass
+
+            # Place counteragent into the correct group folder
+            role = getattr(c_customerIn, "s_role", "")
+            folder_name = "Дропшипери" if role == "dropshipper" else "Оптовики" if role == "wholesaler" else "Покупці"
+            try:
+                c_folder = self.c_v8.Catalogs.Контрагенты.FindByDescription(folder_name, True)
+                if not c_folder.IsEmpty():
+                    c_newCustomer.Parent = c_folder
+                    log_sys(f"Counteragent placed in folder: {folder_name}")
+                else:
+                    log_sys(f"Folder '{folder_name}' not found. Created in root.", 1)
+            except Exception as e:
+                log_sys(f"Failed to set folder: {e}", 1)
 
             c_newCustomer.Write()
 

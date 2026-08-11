@@ -249,26 +249,20 @@ class OrdersManager:
                 except Exception as e:
                     log_sys(f"Failed adding nomenclature: {e}", 1)
                 
-            # Add customer info and metadata directly to order comment before writing
-            s_comment_parts = []
-            if b_isBotCounteragent and c_customer:
-                s_pib = f"{c_customer.s_customerSurname} {c_customer.s_customerName} {c_customer.s_customerPatronymic}".strip()
-                if s_pib:
-                    s_comment_parts.append(s_pib)
-                if c_customer.s_customerPhone:
-                    s_comment_parts.append(c_customer.s_customerPhone)
-                if c_customer.s_customerId:
-                    s_comment_parts.append(c_customer.s_customerId)
-            
+            # Set comment from Order structure (controlled by B2B)
+            s_base_comment = getattr(c_orderObjIn, "s_comment", "") or ""
+            s_extra_parts = []
             s_ttn = getattr(c_orderObjIn, "s_TTN", "")
             s_status = getattr(c_orderObjIn, "s_status", "")
             if s_ttn:
-                s_comment_parts.append(s_ttn)
+                s_extra_parts.append(f"ТТН: {s_ttn}")
             if s_status:
-                s_comment_parts.append(s_status)
-                
-            if s_comment_parts:
-                c_newOrder.Комментарий = " ".join(s_comment_parts)
+                s_extra_parts.append(f"Статус: {s_status}")
+            s_full_comment = s_base_comment
+            if s_extra_parts:
+                s_full_comment = (s_base_comment + (" | " if s_base_comment else "") + " | ".join(s_extra_parts)).strip(" |")
+            c_newOrder.Комментарий = s_full_comment
+            log_sys(f"Order comment: {s_full_comment}")
 
             try:
                 log_sys("Everything done. Trying to post order...")
@@ -335,6 +329,11 @@ class OrdersManager:
             l_orderItemsList = []
             for c_row in c_orderObj1c.Товары:
                 s_article = c_row.Номенклатура.Код
+                s_name = ""
+                try:
+                    s_name = self.c_v8.String(c_row.Номенклатура.Наименование)
+                except Exception as e:
+                    log_sys(f"Failed to get product name for {s_article}: {e}", 1)
                 c_variety = None
                 c_charRef = c_row.ХарактеристикаНоменклатуры
                 if not c_charRef.IsEmpty():
@@ -350,7 +349,8 @@ class OrdersManager:
                 c_item = structures.OrderItem(
                     s_productCodeIn=s_article,
                     c_varietyIn=c_variety,
-                    n_productCountIn=c_row.Количество
+                    n_productCountIn=c_row.Количество,
+                    s_productNameIn=s_name
                 )
                 l_orderItemsList.append(c_item)
 
