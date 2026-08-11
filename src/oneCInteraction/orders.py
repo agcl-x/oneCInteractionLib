@@ -37,7 +37,7 @@ class OrdersManager:
 
             # Date
             log_sys("Trying to add date to order...")
-            c_newOrder.Дата = self.c_v8.ТекущаяДата()
+            c_newOrder.Дата = datetime.now()
             log_sys("Date successfully added")
 
             # Client / Counteragent
@@ -317,7 +317,7 @@ class OrdersManager:
             log_sys(f"Searching for order with number: {s_codeIn}...")
             c_orderRef = self.c_v8.Documents.ЗаказПокупателя.FindByNumber(
                 s_codeIn, 
-                self.c_v8.ТекущаяДата()
+                datetime.now()
             )
 
             if c_orderRef.IsEmpty():
