@@ -29,7 +29,20 @@ class CustomersManager:
                 try:
                     c_newCustomer.ЮридическоеФизическоеЛицо = self.c_v8.Перечисления.ЮридическоеФизическоеЛицо.ФизическоеЛицо
                 except Exception:
-                    log_sys("Could not set counteragent legal type", 1)
+                    try:
+                        c_newCustomer.ЮрФизЛицо = self.c_v8.Enums.ЮрФизЛицо.ФизЛицо
+                    except Exception:
+                        try:
+                            c_newCustomer.ЮрФизЛицо = self.c_v8.Перечисления.ЮрФизЛицо.ФизЛицо
+                        except Exception:
+                            log_sys("Could not set counteragent legal type", 1)
+
+            # Set customer as Buyer
+            try:
+                c_newCustomer.Покупатель = True
+                log_sys("Counteragent Buyer flag set to True")
+            except Exception as e:
+                log_sys(f"Could not set Buyer flag: {e}", 1)
 
             # Construct PIB/Name
             parts = [c_customerIn.s_customerSurname, c_customerIn.s_customerName, c_customerIn.s_customerPatronymic]
@@ -91,7 +104,7 @@ class CustomersManager:
             c_customerIn.s_customerCode = s_code
 
             # Create default contract
-            self.ensure_default_contract(c_newCustomer.Ссылка)
+            self.ensure_default_contract(c_newCustomer.Ссылка, role)
 
             return s_code
 
@@ -184,7 +197,7 @@ class CustomersManager:
             log_sys(f"Error occurred while retrieving customer {s_codeIn}: {e}", 1)
             return None
 
-    def ensure_default_contract(self, c_clientRef):
+    def ensure_default_contract(self, c_clientRef, s_role: str = ""):
         """Ensures that the counterparty has a default contract. Creates one if missing."""
         try:
             if c_clientRef.ОсновнойДоговорКонтрагента.IsEmpty():
@@ -198,14 +211,40 @@ class CustomersManager:
                     if not c_orgRef.IsEmpty():
                         c_contract.Организация = c_orgRef
 
+                # Contract type / Вид договора
                 try:
-                    c_contract.ВидДоговора = self.c_v8.Enums.ВидыДоговоров.СПокупателем
+                    c_contract.ВидДоговора = self.c_v8.Enums.ВидыДоговоровКонтрагентов.СПокупателем
                 except Exception:
                     try:
-                        c_contract.ВидДоговора = self.c_v8.Перечисления.ВидыДоговоров.СПокупателем
+                        c_contract.ВидДоговора = self.c_v8.Перечисления.ВидыДоговоровКонтрагентов.СПокупателем
                     except Exception:
-                        pass
+                        try:
+                            c_contract.ВидДоговора = self.c_v8.Enums.ВидыДоговоров.СПокупателем
+                        except Exception:
+                            try:
+                                c_contract.ВидДоговора = self.c_v8.Перечисления.ВидыДоговоров.СПокупателем
+                            except Exception:
+                                pass
                 
+                # Price type / Тип цен
+                s_price_type_name = "Розничная"
+                if s_role in ["wholesaler", "manager"]:
+                    s_price_type_name = "Оптовая"
+
+                try:
+                    c_priceTypeRef = self.c_v8.Catalogs.ТипыЦенНоменклатуры.FindByDescription(s_price_type_name, True)
+                    if not c_priceTypeRef.IsEmpty():
+                        c_contract.ТипЦен = c_priceTypeRef
+                        log_sys(f"Contract price type set to: {s_price_type_name}")
+                except Exception as e:
+                    try:
+                        c_priceTypeRef = self.c_v8.Справочники.ТипыЦенНоменклатуры.FindByDescription(s_price_type_name, True)
+                        if not c_priceTypeRef.IsEmpty():
+                            c_contract.ТипЦен = c_priceTypeRef
+                            log_sys(f"Contract price type set to: {s_price_type_name} (via Справочники)")
+                    except Exception as e2:
+                        log_sys(f"Failed to set contract price type: {e} / {e2}", 1)
+
                 try:
                     c_currencyRef = self.c_v8.Catalogs.Валюты.FindByCode("980")
                     if not c_currencyRef.IsEmpty():

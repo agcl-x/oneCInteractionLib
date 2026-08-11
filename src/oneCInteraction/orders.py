@@ -83,7 +83,8 @@ class OrdersManager:
 
             try:
                 c_newOrder.Контрагент = c_clientRef
-                self.c_connection.customers.ensure_default_contract(c_clientRef)
+                s_role = getattr(c_orderObjIn.c_orderCustomer, "s_role", "")
+                self.c_connection.customers.ensure_default_contract(c_clientRef, s_role)
                 c_newOrder.ДоговорКонтрагента = c_clientRef.ОсновнойДоговорКонтрагента
                 log_sys("Contragent and ContragentContract successfully added to order")
             except Exception as e:
@@ -123,7 +124,11 @@ class OrdersManager:
             log_sys("Trying to get price type...")
             s_price_type_name = getattr(c_orderObjIn, "s_price_type", "")
             if not s_price_type_name:
-                s_price_type_name = "Розничная"
+                s_role = getattr(c_orderObjIn.c_orderCustomer, "s_role", "")
+                if s_role in ["wholesaler", "manager"]:
+                    s_price_type_name = "Оптовая"
+                else:
+                    s_price_type_name = "Розничная"
             c_priceTypeRef = self.c_connection.get_price_type_ref(s_price_type_name)
             c_newOrder.ТипЦен = c_priceTypeRef
             log_sys(f"Price type ({s_price_type_name}) successfully added to order")
@@ -245,6 +250,19 @@ class OrdersManager:
                     c_row.Коэффициент = 1
                     c_row.Цена = float(n_actualPrice)
                     c_row.Сумма = float(c_row.Количество * c_row.Цена)
+
+                    # Apply 20% discount for dropshippers
+                    s_role = getattr(c_orderObjIn.c_orderCustomer, "s_role", "")
+                    if s_role == "dropshipper":
+                        try:
+                            c_row.ПроцентСкидкиНаценки = 20.0
+                        except Exception:
+                            try:
+                                c_row.ПроцентРучнойСкидки = 20.0
+                            except Exception:
+                                pass
+                        c_row.Сумма = float(c_row.Количество * c_row.Цена * 0.8)
+
                     log_sys("Nomenclature was successfully added")
                 except Exception as e:
                     log_sys(f"Failed adding nomenclature: {e}", 1)
@@ -336,15 +354,18 @@ class OrdersManager:
                     log_sys(f"Failed to get product name for {s_article}: {e}", 1)
                 c_variety = None
                 c_charRef = c_row.ХарактеристикаНоменклатуры
+                l_chars = []
                 if not c_charRef.IsEmpty():
                     s_charName = c_charRef.Наименование
                     l_chars = self.c_connection.characteristics.get(c_charRef, s_charName)
-                    c_variety = structures.Variety(
-                        c_priceRetailIn=structures.Price(c_row.Цена, s_type="Розничная"),
-                        c_priceOptIn=structures.Price(0.0, s_type="Оптовая"),
-                        d_countIn={},
-                        l_characteristicsIn=l_chars
-                    )
+                
+                # Always create Variety to preserve row price
+                c_variety = structures.Variety(
+                    c_priceRetailIn=structures.Price(c_row.Цена, s_type="Розничная"),
+                    c_priceOptIn=structures.Price(0.0, s_type="Оптовая"),
+                    d_countIn={},
+                    l_characteristicsIn=l_chars
+                )
 
                 c_item = structures.OrderItem(
                     s_productCodeIn=s_article,
