@@ -37,7 +37,7 @@ class OrdersManager:
 
             # Date
             log_sys("Trying to add date to order...")
-            c_newOrder.Дата = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
+            c_newOrder.Дата = self.c_v8.ТекущаяДата()
             log_sys("Date successfully added")
 
             # Client / Counteragent
@@ -317,7 +317,7 @@ class OrdersManager:
             log_sys(f"Searching for order with number: {s_codeIn}...")
             c_orderRef = self.c_v8.Documents.ЗаказПокупателя.FindByNumber(
                 s_codeIn, 
-                datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
+                self.c_v8.ТекущаяДата()
             )
 
             if c_orderRef.IsEmpty():
@@ -408,9 +408,7 @@ class OrdersManager:
                 log_sys(f"Counteragent with code {self.c_connection.s_counteragent_code} not found in 1C.", 1)
                 return []
 
-            c_startOfToday = datetime.now(self.c_connection.tz_kiev).replace(
-                hour=0, minute=0, second=0, microsecond=0, tzinfo=None
-            )
+            c_startOfToday = self.c_v8.НачалоДня(self.c_v8.ТекущаяДата())
             c_query = self.c_v8.NewObject("Query")
             c_query.Text = """
                 SELECT Номер AS Number
