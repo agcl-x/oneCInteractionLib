@@ -134,6 +134,11 @@ try:
     assert c_conn.properties is not None
     print("Success: Checked all composition managers exist (including properties).")
     
+    # Test OrdersManager when connection is not active
+    assert c_conn.orders.get_by_date(datetime.now()) == []
+    assert c_conn.orders.push(c_order) == ""
+    print("Success: OrdersManager.get_by_date and push tested with no active connection.")
+    
     # Test PropertiesManager when connection is not active
     assert c_conn.properties.get_assigned_properties("ART001") == []
     assert c_conn.properties.write("ART001", "Колір", "Зелений") is False

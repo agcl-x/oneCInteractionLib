@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from .log import log_sys
 from . import structures
 
@@ -13,12 +13,12 @@ class OrdersManager:
     def push(self, c_orderObjIn) -> str:
         """Pushes a new customer order to 1C database, returning the created order number or empty string."""
         if not self.c_v8:
-            log_sys("Failed to push order: No connection to 1C. Returning None", 1)
-            return None
+            log_sys("Failed to push order: No connection to 1C. Returning \"\"", 1)
+            return ""
             
-        if not self.c_connection.s_warehouse_code or not self.c_connection.s_counteragent_code or not self.c_connection.s_organisation_code:
-            log_sys("Failed to push order: No warehouse code and/or counteragent code and/or organisation code. Returning None", 1)
-            return None
+        if not self.c_connection.s_warehouse_code or not self.c_connection.s_organisation_code:
+            log_sys("Failed to push order: No warehouse code and/or organisation code. Returning \"\"", 1)
+            return ""
 
         try:
             c_newOrder = self.c_v8.Documents.ЗаказПокупателя.CreateDocument()
@@ -50,7 +50,6 @@ class OrdersManager:
             # Client / Counteragent
             c_clientRef = None
             c_customer = getattr(c_orderObjIn, "c_orderCustomer", None)
-            b_isBotCounteragent = False
             
             if c_customer:
                 log_sys("Customer structure found in order. Trying to resolve counteragent in 1C...")
@@ -73,20 +72,11 @@ class OrdersManager:
                                 c_clientRef = c_ref
                                 log_sys("New customer created and resolved.")
                 except Exception as e:
-                    log_sys(f"Failed to resolve customer: {e}. Falling back to bot counteragent...", 1)
+                    log_sys(f"Failed to resolve customer: {e}.", 1)
             
-            # Fallback to Bot Counteragent if customer resolution failed or customer wasn't provided
             if not c_clientRef or c_clientRef.IsEmpty():
-                b_isBotCounteragent = True
-                log_sys(f"Falling back to bot counteragent with code: {self.c_connection.s_counteragent_code}")
-                try:
-                    c_clientRef = self.c_v8.Catalogs.Контрагенты.FindByCode(self.c_connection.s_counteragent_code)
-                    if c_clientRef.IsEmpty():
-                        log_sys(f"Can't find bot contragent by code: {self.c_connection.s_counteragent_code}. Returning \"\"", 1)
-                        return ""
-                except Exception as e:
-                    log_sys(f"Failed to resolve bot contragent: {e}. Returning \"\"", 1)
-                    return ""
+                log_sys("Customer reference is empty or not resolved in 1C. Returning \"\"", 1)
+                return ""
 
             try:
                 c_newOrder.Контрагент = c_clientRef
@@ -397,54 +387,70 @@ class OrdersManager:
             log_sys(f"Error occurred while retrieving order {s_codeIn}: {e}", 1)
             return None
 
-    def get_today(self) -> list:
-        """Retrieves all orders created today for the configured counteragent bot."""
+    def get_by_date(self, target_date, s_counteragent_code: str = "") -> list:
+        """Retrieves all orders for a specific date (date or datetime object), optionally filtered by counteragent or counteragent group code."""
         if not self.c_v8:
-            log_sys("Failed to get today's orders: No connection to 1C.", 1)
+            log_sys("Failed to get orders by date: No connection to 1C.", 1)
             return []
 
-        if len(self.c_connection.s_counteragent_code) < 1:
-            log_sys("Failed to get today's orders: No counteragent code. Returning []", 1)
-            return []
-            
         try:
-            log_sys("Fetching today's orders for bot counteragent...")
-            c_clientRef = self.c_v8.Catalogs.Контрагенты.FindByCode(self.c_connection.s_counteragent_code)
-
-            if c_clientRef is None or c_clientRef.IsEmpty():
-                log_sys(f"Counteragent with code {self.c_connection.s_counteragent_code} not found in 1C.", 1)
+            log_sys(f"Fetching orders for date {target_date}...")
+            
+            if isinstance(target_date, datetime):
+                dt_obj = target_date
+            elif isinstance(target_date, date):
+                dt_obj = datetime.combine(target_date, datetime.min.time())
+            elif hasattr(target_date, "year") and hasattr(target_date, "month") and hasattr(target_date, "day"):
+                dt_obj = datetime(target_date.year, target_date.month, target_date.day)
+            else:
+                log_sys(f"Invalid date format passed to get_by_date: {target_date}. Returning []", 1)
                 return []
 
-            c_startOfToday = self.c_v8.НачалоДня(self.c_v8.ТекущаяДата())
+            if dt_obj.tzinfo is not None:
+                dt_obj = dt_obj.astimezone(self.c_connection.tz_kiev).replace(tzinfo=None)
+
+            c_startDate = self.c_v8.НачалоДня(dt_obj)
+            c_endDate = self.c_v8.КонецДня(dt_obj)
+
             c_query = self.c_v8.NewObject("Query")
-            c_query.Text = """
+            
+            s_query_text = """
                 SELECT Номер AS Number
                 FROM Документ.ЗаказПокупателя
-                WHERE Дата >= &StartDate
-                  AND Контрагент = &ClientBot
+                WHERE Дата >= &StartDate AND Дата <= &EndDate
                   AND ПометкаУдаления = FALSE
-                ORDER BY Дата DESC
             """
-            c_query.SetParameter("StartDate", c_startOfToday)
-            c_query.SetParameter("ClientBot", c_clientRef)
+
+            if s_counteragent_code:
+                c_clientRef = self.c_v8.Catalogs.Контрагенты.FindByCode(s_counteragent_code)
+                if c_clientRef is None or c_clientRef.IsEmpty():
+                    log_sys(f"Counteragent with code '{s_counteragent_code}' not found in 1C. Returning []", 1)
+                    return []
+                s_query_text += "\n  AND Контрагент В ИЕРАРХИИ(&ClientRef)"
+                c_query.SetParameter("ClientRef", c_clientRef)
+
+            s_query_text += "\nORDER BY Дата DESC"
+            c_query.Text = s_query_text
+            c_query.SetParameter("StartDate", c_startDate)
+            c_query.SetParameter("EndDate", c_endDate)
 
             c_result = c_query.Execute()
             l_ordersList = []
 
             if not c_result.IsEmpty():
                 c_selection = c_result.Select()
-                log_sys("Found some orders. Starting to parse...")
+                log_sys("Found some orders for the date. Starting to parse...")
 
                 while c_selection.Next():
                     c_orderObj = self.get(c_selection.Number)
                     if c_orderObj:
                         l_ordersList.append(c_orderObj)
 
-            log_sys(f"Successfully retrieved {len(l_ordersList)} orders for today.")
+            log_sys(f"Successfully retrieved {len(l_ordersList)} orders for date {target_date}.")
             return l_ordersList
 
         except Exception as e:
-            log_sys(f"Error in getTodayOrders: {e}", 1)
+            log_sys(f"Error in get_by_date: {e}", 1)
             return []
 
     def update_info(self, c_orderObjIn) -> bool:

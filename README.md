@@ -53,7 +53,6 @@ def __init__(self, s_oneCDatabasePathIn: str, s_usernameIn: str, s_passwordIn: s
 
 #### Key Attributes:
 - `s_warehouse_code` (str): 1C warehouse code for new orders.
-- `s_counteragent_code` (str): 1C counteragent (customer) code for new orders.
 - `s_organisation_code` (str): 1C organization code for new orders.
 - `sl_price_types` (list): List of price type names to cache automatically (defaults to `["Розничная", "Оптовая", "Закупочная"]`).
 - `c_v8`: The active 1C COM connection object (equals `None` if not connected).
@@ -224,8 +223,8 @@ Defined in [orders.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/
   - Returns the number of the created document in 1C (or an empty string on error).
 - `get(s_codeIn: str) -> Order | None`
   Retrieves a buyer's order by its 1C document number and parses it into an `Order` object. The comment field is parsed to retrieve the Telegram ID, and the price type is retrieved.
-- `get_today() -> list`
-  Returns a list of all today's orders created for the configured bot counteragent (filtered by current date and counteragent code).
+- `get_by_date(target_date: date | datetime, s_counteragent_code: str = "") -> list`
+  Returns a list of all orders for a specific date (accepting `datetime.date` or `datetime.datetime`), optionally filtered by counteragent or counteragent group code.
 - `update_info(c_orderObjIn: Order) -> bool`
   Updates the comment field of the order in 1C. Writes a formatted string to the comment field:
   `"[Full Name] [Phone] [Telegram ID] [Waybill/TTN] [Status]"`
@@ -297,7 +296,6 @@ c_conn = Connection(
 
 # 2. Configure 1C Default Codes
 c_conn.s_warehouse_code = "000000001"  # Warehouse code
-c_conn.s_counteragent_code = "000000045"  # Bot customer/counteragent code
 c_conn.s_organisation_code = "000000001"  # Organization code
 
 # 3. Establish connection to 1C
