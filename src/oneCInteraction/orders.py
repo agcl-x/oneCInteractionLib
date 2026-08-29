@@ -409,8 +409,8 @@ class OrdersManager:
             if dt_obj.tzinfo is not None:
                 dt_obj = dt_obj.astimezone(self.c_connection.tz_kiev).replace(tzinfo=None)
 
-            c_startDate = self.c_v8.НачалоДня(dt_obj)
-            c_endDate = self.c_v8.КонецДня(dt_obj)
+            c_startDate = dt_obj.replace(hour=0, minute=0, second=0, microsecond=0)
+            c_endDate = dt_obj.replace(hour=23, minute=59, second=59, microsecond=0)
 
             c_query = self.c_v8.NewObject("Query")
             
