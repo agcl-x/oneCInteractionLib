@@ -224,7 +224,7 @@ Defined in [orders.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/
 - `get(s_codeIn: str) -> Order | None`
   Retrieves a buyer's order by its 1C document number and parses it into an `Order` object. The comment field is parsed to retrieve the Telegram ID, and the price type is retrieved.
 - `get_by_date(target_date: date | datetime, s_counteragent_code: str = "") -> list`
-  Returns a list of all orders for a specific date (accepting `datetime.date` or `datetime.datetime`), optionally filtered by counteragent or counteragent group code.
+  Returns a list of all posted orders (`Проведен = TRUE`) for a specific date (accepting `datetime.date` or `datetime.datetime`), optionally filtered by counteragent or counteragent group code.
 - `update_info(c_orderObjIn: Order) -> bool`
   Updates the comment field of the order in 1C. Writes a formatted string to the comment field:
   `"[Full Name] [Phone] [Telegram ID] [Waybill/TTN] [Status]"`

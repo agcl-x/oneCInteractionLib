@@ -419,6 +419,7 @@ class OrdersManager:
                 FROM Документ.ЗаказПокупателя
                 WHERE Дата >= &StartDate AND Дата <= &EndDate
                   AND ПометкаУдаления = FALSE
+                  AND Проведен = TRUE
             """
 
             if s_counteragent_code:
