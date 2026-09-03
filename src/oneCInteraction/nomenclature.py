@@ -709,17 +709,12 @@ class NomenclatureManager:
                 log_sys(f"Error fetching image references for {c_productObjIn.s_code}: {e}", 1)
 
 
+        import hashlib
+        import glob
+
         for idx, s_rawUuid in enumerate(l_imageUuids):
             s_cleanUuid = s_rawUuid.replace('{', '').replace('}', '').replace('-', '')
-            s_fileName = f"{s_cleanUuid}_{idx}.jpg"
-            s_filePath = os.path.join(s_imageDirIn, s_fileName)
-            
-            if os.path.exists(s_filePath):
-                l_savedFilenames.append(s_fileName)
-                continue
-                
             try:
-                log_sys(f"Image {s_fileName} missing locally. Downloading from 1C...")
                 c_imgUuidObj = self.c_v8.NewObject("UUID", s_rawUuid)
                 c_imgRef = self.c_v8.Catalogs.ХранилищеДополнительнойИнформации.GetRef(c_imgUuidObj)
                 
@@ -727,15 +722,40 @@ class NomenclatureManager:
                 c_binaryData = c_valueStorage.Get()
                 
                 if c_binaryData:
-                    c_binaryData.Write(s_filePath)
-                    if os.path.exists(s_filePath):
+                    s_tempPath = os.path.join(s_imageDirIn, f"tmp_{s_cleanUuid}_{idx}.jpg")
+                    c_binaryData.Write(s_tempPath)
+                    
+                    if os.path.exists(s_tempPath):
+                        hasher = hashlib.md5()
+                        with open(s_tempPath, "rb") as f:
+                            for chunk in iter(lambda: f.read(65536), b""):
+                                hasher.update(chunk)
+                        file_hash = hasher.hexdigest()[:8]
+                        
+                        s_fileName = f"{s_cleanUuid}_{idx}_{file_hash}.jpg"
+                        s_filePath = os.path.join(s_imageDirIn, s_fileName)
+                        
+                        if os.path.exists(s_filePath):
+                            try:
+                                os.remove(s_tempPath)
+                            except OSError:
+                                pass
+                        else:
+                            for old_f in glob.glob(os.path.join(s_imageDirIn, f"{s_cleanUuid}_{idx}*")):
+                                if old_f != s_tempPath:
+                                    try:
+                                        os.remove(old_f)
+                                    except OSError:
+                                        pass
+                            os.replace(s_tempPath, s_filePath)
+                            
                         l_savedFilenames.append(s_fileName)
                     else:
-                        log_sys(f"Failed to write file to disk: {s_filePath}", 1)
+                        log_sys(f"Failed to write file to disk: {s_tempPath}", 1)
                 else:
-                    log_sys(f"Record for {s_fileName} has empty storage.", 1)
+                    log_sys(f"Record for {s_cleanUuid}_{idx} has empty storage.", 1)
             except Exception as e:
-                log_sys(f"Error downloading image {s_fileName}: {e}", 1)
+                log_sys(f"Error downloading image {s_cleanUuid}_{idx}: {e}", 1)
 
         log_sys(f"Images retrieval completed for {c_productObjIn.s_code}: retrieved {len(l_savedFilenames)} images.")
         return l_savedFilenames
