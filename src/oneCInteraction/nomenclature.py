@@ -438,7 +438,7 @@ class NomenclatureManager:
         return d_arrivals
 
     def _fetch_batch_image_metadata(self, l_productRefsIn: list) -> dict:
-        """Batch fetches image references (UUIDs) and data versions for a list of product references."""
+        """Batch fetches image references (UUIDs) and file metadata for change detection."""
         if not self.c_v8 or not l_productRefsIn:
             return {}
             
@@ -449,7 +449,7 @@ class NomenclatureManager:
             
         c_query = self.c_v8.NewObject("Query")
         c_query.Text = """
-            SELECT Объект AS ProductRef, Ссылка AS ImageRef, ВерсияДанных AS DataVersion
+            SELECT Объект AS ProductRef, Ссылка AS ImageRef, ДатаМодификацииУниверсальная AS ModDate, ИмяФайла AS FileName
             FROM Справочник.ХранилищеДополнительнойИнформации
             WHERE Объект В (&ProductRefs) AND ПометкаУдаления = ЛОЖЬ
         """
@@ -463,13 +463,15 @@ class NomenclatureManager:
                 while c_sel.Next():
                     s_productUuid = self.c_v8.String(c_sel.ProductRef.UUID())
                     s_imageUuid = self.c_v8.String(c_sel.ImageRef.UUID())
+                    # Use modification date + filename as version key — changes whenever file is updated or renamed
                     s_version = ""
                     try:
-                        v_val = c_sel.DataVersion
-                        try:
-                            s_version = self.c_v8.Base64Строка(v_val)
-                        except Exception:
-                            s_version = self.c_v8.String(v_val)
+                        s_mod_date = self.c_v8.String(c_sel.ModDate)  # datetime as string e.g. "20240903153000"
+                        s_fname = self.c_v8.String(c_sel.FileName)
+                        if s_mod_date:
+                            s_version = s_mod_date
+                        if s_fname:
+                            s_version += f"_{s_fname}"
                     except Exception:
                         pass
                     if s_productUuid not in d_batchImages:
@@ -479,6 +481,8 @@ class NomenclatureManager:
             log_sys(f"Error in batch image metadata: {e}", 1)
             
         return d_batchImages
+
+
 
     def _fetch_details(
         self,
@@ -704,7 +708,7 @@ class NomenclatureManager:
                 
                 c_query = self.c_v8.NewObject("Query")
                 c_query.Text = """
-                    SELECT Ссылка, ВерсияДанных
+                    SELECT Ссылка, ДатаМодификацииУниверсальная AS ModDate, ИмяФайла AS FileName
                     FROM Справочник.ХранилищеДополнительнойИнформации
                     WHERE Объект = &ProductRef AND ПометкаУдаления = ЛОЖЬ
                 """
@@ -716,12 +720,19 @@ class NomenclatureManager:
                         s_imgUuid = self.c_v8.String(c_sel.Ссылка.UUID())
                         s_ver = ""
                         try:
-                            s_ver = self.c_v8.Base64Строка(c_sel.ВерсияДанных)
+                            s_mod_date = self.c_v8.String(c_sel.ModDate)
+                            s_fname = self.c_v8.String(c_sel.FileName)
+                            if s_mod_date:
+                                s_ver = s_mod_date
+                            if s_fname:
+                                s_ver += f"_{s_fname}"
                         except Exception:
-                            s_ver = self.c_v8.String(c_sel.ВерсияДанных)
+                            pass
                         l_imageUuids.append({"uuid": s_imgUuid, "version": s_ver})
             except Exception as e:
                 log_sys(f"Error fetching image references for {c_productObjIn.s_code}: {e}", 1)
+
+
 
         import hashlib
         import glob
