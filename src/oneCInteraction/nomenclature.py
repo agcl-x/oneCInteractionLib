@@ -452,6 +452,7 @@ class NomenclatureManager:
             SELECT Объект AS ProductRef, Ссылка AS ImageRef, ВерсияДанных AS DataVersion, ИмяФайла AS FileName
             FROM Справочник.ХранилищеДополнительнойИнформации
             WHERE Объект В (&ProductRefs) AND ПометкаУдаления = ЛОЖЬ
+            ORDER BY Наименование
         """
         c_query.SetParameter("ProductRefs", c_refsV8)
         
@@ -716,6 +717,7 @@ class NomenclatureManager:
                     SELECT Ссылка, ВерсияДанных AS DataVersion, ИмяФайла AS FileName
                     FROM Справочник.ХранилищеДополнительнойИнформации
                     WHERE Объект = &ProductRef AND ПометкаУдаления = ЛОЖЬ
+                    ORDER BY Наименование
                 """
                 c_query.SetParameter("ProductRef", c_productRef)
                 c_res = c_query.Execute()
@@ -747,6 +749,8 @@ class NomenclatureManager:
         import hashlib
         import glob
 
+        s_cleanProductUuid = str(getattr(c_productObjIn, 's_uuid', '')).replace('{', '').replace('}', '').replace('-', '')
+
         for idx, img_info in enumerate(l_imageUuids):
             if isinstance(img_info, dict):
                 s_rawUuid = img_info.get("uuid", "")
@@ -758,13 +762,11 @@ class NomenclatureManager:
                 s_rawUuid = str(img_info)
                 s_version = ""
 
-            s_cleanUuid = s_rawUuid.replace('{', '').replace('}', '').replace('-', '')
-            
             if s_version:
                 v_hash = hashlib.md5(s_version.encode('utf-8', errors='ignore')).hexdigest()[:8]
-                s_fileName = f"{s_cleanUuid}_{idx}_{v_hash}.jpg"
+                s_fileName = f"{s_cleanProductUuid}_{idx}_{v_hash}.jpg"
             else:
-                s_fileName = f"{s_cleanUuid}_{idx}.jpg"
+                s_fileName = f"{s_cleanProductUuid}_{idx}.jpg"
                 
             s_filePath = os.path.join(s_imageDirIn, s_fileName)
             
@@ -784,7 +786,7 @@ class NomenclatureManager:
                 
                 if c_binaryData:
                     # Remove older versions matching this slot
-                    for old_f in glob.glob(os.path.join(s_imageDirIn, f"{s_cleanUuid}_{idx}*")):
+                    for old_f in glob.glob(os.path.join(s_imageDirIn, f"{s_cleanProductUuid}_{idx}*")):
                         try:
                             os.remove(old_f)
                         except OSError:
@@ -796,7 +798,7 @@ class NomenclatureManager:
                     else:
                         log_sys(f"Failed to write file to disk: {s_filePath}", 1)
                 else:
-                    log_sys(f"Record for {s_cleanUuid}_{idx} has empty storage.", 1)
+                    log_sys(f"Record for {s_cleanProductUuid}_{idx} has empty storage.", 1)
             except Exception as e:
                 log_sys(f"Error downloading image {s_fileName}: {e}", 1)
 
