@@ -438,7 +438,7 @@ class NomenclatureManager:
         return d_arrivals
 
     def _fetch_batch_image_metadata(self, l_productRefsIn: list) -> dict:
-        """Batch fetches image references (UUIDs) for a list of product references."""
+        """Batch fetches image references (UUIDs) and data versions for a list of product references."""
         if not self.c_v8 or not l_productRefsIn:
             return {}
             
@@ -449,7 +449,7 @@ class NomenclatureManager:
             
         c_query = self.c_v8.NewObject("Query")
         c_query.Text = """
-            SELECT Объект AS ProductRef, Ссылка AS ImageRef
+            SELECT Объект AS ProductRef, Ссылка AS ImageRef, ВерсияДанных AS DataVersion
             FROM Справочник.ХранилищеДополнительнойИнформации
             WHERE Объект В (&ProductRefs) AND ПометкаУдаления = ЛОЖЬ
         """
@@ -463,9 +463,18 @@ class NomenclatureManager:
                 while c_sel.Next():
                     s_productUuid = self.c_v8.String(c_sel.ProductRef.UUID())
                     s_imageUuid = self.c_v8.String(c_sel.ImageRef.UUID())
+                    s_version = ""
+                    try:
+                        v_val = c_sel.DataVersion
+                        try:
+                            s_version = self.c_v8.Base64Строка(v_val)
+                        except Exception:
+                            s_version = self.c_v8.String(v_val)
+                    except Exception:
+                        pass
                     if s_productUuid not in d_batchImages:
                         d_batchImages[s_productUuid] = []
-                    d_batchImages[s_productUuid].append(s_imageUuid)
+                    d_batchImages[s_productUuid].append({"uuid": s_imageUuid, "version": s_version})
         except Exception as e:
             log_sys(f"Error in batch image metadata: {e}", 1)
             
@@ -695,7 +704,7 @@ class NomenclatureManager:
                 
                 c_query = self.c_v8.NewObject("Query")
                 c_query.Text = """
-                    SELECT Ссылка
+                    SELECT Ссылка, ВерсияДанных
                     FROM Справочник.ХранилищеДополнительнойИнформации
                     WHERE Объект = &ProductRef AND ПометкаУдаления = ЛОЖЬ
                 """
@@ -704,17 +713,48 @@ class NomenclatureManager:
                 if not c_res.IsEmpty():
                     c_sel = c_res.Select()
                     while c_sel.Next():
-                        l_imageUuids.append(self.c_v8.String(c_sel.Ссылка.UUID()))
+                        s_imgUuid = self.c_v8.String(c_sel.Ссылка.UUID())
+                        s_ver = ""
+                        try:
+                            s_ver = self.c_v8.Base64Строка(c_sel.ВерсияДанных)
+                        except Exception:
+                            s_ver = self.c_v8.String(c_sel.ВерсияДанных)
+                        l_imageUuids.append({"uuid": s_imgUuid, "version": s_ver})
             except Exception as e:
                 log_sys(f"Error fetching image references for {c_productObjIn.s_code}: {e}", 1)
-
 
         import hashlib
         import glob
 
-        for idx, s_rawUuid in enumerate(l_imageUuids):
+        for idx, img_info in enumerate(l_imageUuids):
+            if isinstance(img_info, dict):
+                s_rawUuid = img_info.get("uuid", "")
+                s_version = img_info.get("version", "")
+            elif isinstance(img_info, (list, tuple)):
+                s_rawUuid = img_info[0]
+                s_version = img_info[1] if len(img_info) > 1 else ""
+            else:
+                s_rawUuid = str(img_info)
+                s_version = ""
+
             s_cleanUuid = s_rawUuid.replace('{', '').replace('}', '').replace('-', '')
+            
+            if s_version:
+                v_hash = hashlib.md5(s_version.encode('utf-8', errors='ignore')).hexdigest()[:8]
+                s_fileName = f"{s_cleanUuid}_{idx}_{v_hash}.jpg"
+            else:
+                s_fileName = f"{s_cleanUuid}_{idx}.jpg"
+                
+            s_filePath = os.path.join(s_imageDirIn, s_fileName)
+            
+            # Fast-path: file with this exact version already exists locally
+            if os.path.exists(s_filePath):
+                l_savedFilenames.append(s_fileName)
+                continue
+                
+            # Slow-path: only download missing or modified files from 1C
             try:
+                log_sys(f"Downloading new/updated image {s_fileName} from 1C...")
                 c_imgUuidObj = self.c_v8.NewObject("UUID", s_rawUuid)
                 c_imgRef = self.c_v8.Catalogs.ХранилищеДополнительнойИнформации.GetRef(c_imgUuidObj)
                 
@@ -722,40 +762,22 @@ class NomenclatureManager:
                 c_binaryData = c_valueStorage.Get()
                 
                 if c_binaryData:
-                    s_tempPath = os.path.join(s_imageDirIn, f"tmp_{s_cleanUuid}_{idx}.jpg")
-                    c_binaryData.Write(s_tempPath)
-                    
-                    if os.path.exists(s_tempPath):
-                        hasher = hashlib.md5()
-                        with open(s_tempPath, "rb") as f:
-                            for chunk in iter(lambda: f.read(65536), b""):
-                                hasher.update(chunk)
-                        file_hash = hasher.hexdigest()[:8]
-                        
-                        s_fileName = f"{s_cleanUuid}_{idx}_{file_hash}.jpg"
-                        s_filePath = os.path.join(s_imageDirIn, s_fileName)
-                        
-                        if os.path.exists(s_filePath):
-                            try:
-                                os.remove(s_tempPath)
-                            except OSError:
-                                pass
-                        else:
-                            for old_f in glob.glob(os.path.join(s_imageDirIn, f"{s_cleanUuid}_{idx}*")):
-                                if old_f != s_tempPath:
-                                    try:
-                                        os.remove(old_f)
-                                    except OSError:
-                                        pass
-                            os.replace(s_tempPath, s_filePath)
+                    # Remove older versions matching this slot
+                    for old_f in glob.glob(os.path.join(s_imageDirIn, f"{s_cleanUuid}_{idx}*")):
+                        try:
+                            os.remove(old_f)
+                        except OSError:
+                            pass
                             
+                    c_binaryData.Write(s_filePath)
+                    if os.path.exists(s_filePath):
                         l_savedFilenames.append(s_fileName)
                     else:
-                        log_sys(f"Failed to write file to disk: {s_tempPath}", 1)
+                        log_sys(f"Failed to write file to disk: {s_filePath}", 1)
                 else:
                     log_sys(f"Record for {s_cleanUuid}_{idx} has empty storage.", 1)
             except Exception as e:
-                log_sys(f"Error downloading image {s_cleanUuid}_{idx}: {e}", 1)
+                log_sys(f"Error downloading image {s_fileName}: {e}", 1)
 
         log_sys(f"Images retrieval completed for {c_productObjIn.s_code}: retrieved {len(l_savedFilenames)} images.")
         return l_savedFilenames
