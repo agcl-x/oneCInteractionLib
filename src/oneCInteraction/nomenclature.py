@@ -785,10 +785,17 @@ class NomenclatureManager:
                 c_binaryData = c_valueStorage.Get()
                 
                 if c_binaryData:
-                    # Remove older versions matching this slot
-                    for old_f in glob.glob(os.path.join(s_imageDirIn, f"{s_cleanProductUuid}_{idx}*")):
+                    # Remove older versions matching this exact slot
+                    for old_f in glob.glob(os.path.join(s_imageDirIn, f"{s_cleanProductUuid}_{idx}_*")):
                         try:
                             os.remove(old_f)
+                        except OSError:
+                            pass
+                    # Also try to remove the non-hashed legacy fallback if it exists
+                    legacy_f = os.path.join(s_imageDirIn, f"{s_cleanProductUuid}_{idx}.jpg")
+                    if os.path.exists(legacy_f):
+                        try:
+                            os.remove(legacy_f)
                         except OSError:
                             pass
                             
