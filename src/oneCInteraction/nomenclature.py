@@ -1,4 +1,6 @@
 import os
+import glob
+import hashlib
 from datetime import datetime
 from .log import log_sys
 from . import structures
@@ -704,7 +706,7 @@ class NomenclatureManager:
         os.makedirs(s_imageDirIn, exist_ok=True)
 
         l_savedFilenames = []
-        l_imageUuids = getattr(c_productObjIn, 'l_images', [])
+        l_imageUuids = list(getattr(c_productObjIn, 'l_images', []))
 
         if not l_imageUuids:
             try:
@@ -743,13 +745,10 @@ class NomenclatureManager:
             except Exception as e:
                 log_sys(f"Error fetching image references for {c_productObjIn.s_code}: {e}", 1)
 
-
-
-
-        import hashlib
-        import glob
-
         s_cleanProductUuid = str(getattr(c_productObjIn, 's_uuid', '')).replace('{', '').replace('}', '').replace('-', '')
+        if not s_cleanProductUuid:
+            log_sys(f"Cannot save images: product '{getattr(c_productObjIn, 's_name', getattr(c_productObjIn, 's_code', '?'))}' has no UUID.", 1)
+            return []
 
         for idx, img_info in enumerate(l_imageUuids):
             if isinstance(img_info, dict):
