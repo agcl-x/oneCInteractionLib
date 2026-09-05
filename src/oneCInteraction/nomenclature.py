@@ -451,7 +451,7 @@ class NomenclatureManager:
             
         c_query = self.c_v8.NewObject("Query")
         c_query.Text = """
-            SELECT Объект AS ProductRef, Ссылка AS ImageRef, ВерсияДанных AS DataVersion, ИмяФайла AS FileName
+            SELECT Объект AS ProductRef, Ссылка AS ImageRef, ХешФайла AS DataVersion, ИмяФайла AS FileName
             FROM Справочник.ХранилищеДополнительнойИнформации
             WHERE Объект В (&ProductRefs) AND ПометкаУдаления = ЛОЖЬ
             ORDER BY Наименование
@@ -716,7 +716,7 @@ class NomenclatureManager:
                 
                 c_query = self.c_v8.NewObject("Query")
                 c_query.Text = """
-                    SELECT Ссылка, ВерсияДанных AS DataVersion, ИмяФайла AS FileName
+                    SELECT Ссылка, ХешФайла AS DataVersion, ИмяФайла AS FileName
                     FROM Справочник.ХранилищеДополнительнойИнформации
                     WHERE Объект = &ProductRef AND ПометкаУдаления = ЛОЖЬ
                     ORDER BY Наименование
