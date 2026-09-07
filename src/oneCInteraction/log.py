@@ -2,6 +2,9 @@ import inspect
 import os
 from datetime import datetime
 import sys
+import threading
+
+_log_lock = threading.Lock()
 
 # Determine the root directory of the project importing this library
 main_module = sys.modules.get('__main__')
@@ -29,5 +32,6 @@ def log_sys(message, errorFlag = 0, user_id = None):
     log(log_path, log_text)
 
 def log(file_path, log_text):
-    with open(file_path, "a", encoding="utf-8") as f:
-        f.write(log_text)
+    with _log_lock:
+        with open(file_path, "a", encoding="utf-8") as f:
+            f.write(log_text)

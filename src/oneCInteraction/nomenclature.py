@@ -451,7 +451,7 @@ class NomenclatureManager:
             
         c_query = self.c_v8.NewObject("Query")
         c_query.Text = """
-            SELECT Объект AS ProductRef, Ссылка AS ImageRef, ХешФайла AS DataVersion, ИмяФайла AS FileName
+            SELECT Объект AS ProductRef, Ссылка AS ImageRef, ХешФайла AS FileHash, ВерсияДанных AS DataVersion, ИмяФайла AS FileName
             FROM Справочник.ХранилищеДополнительнойИнформации
             WHERE Объект В (&ProductRefs) AND ПометкаУдаления = ЛОЖЬ
             ORDER BY Наименование
@@ -466,15 +466,24 @@ class NomenclatureManager:
                 while c_sel.Next():
                     s_productUuid = self.c_v8.String(c_sel.ProductRef.UUID())
                     s_imageUuid = self.c_v8.String(c_sel.ImageRef.UUID())
-                    # ВерсияДанных is a guaranteed system field. Convert via XMLСтрока.
+                    
                     s_version = ""
                     try:
-                        s_version = self.c_v8.XMLСтрока(c_sel.DataVersion)
+                        # Спершу пробуємо ХешФайла
+                        s_version = self.c_v8.String(c_sel.FileHash)
                     except Exception:
+                        pass
+                        
+                    # Якщо ХешФайла пустий, використовуємо ВерсияДанных як фолбек
+                    if not s_version:
                         try:
-                            s_version = self.c_v8.String(c_sel.DataVersion)
+                            s_version = self.c_v8.XMLСтрока(c_sel.DataVersion)
                         except Exception:
-                            pass
+                            try:
+                                s_version = self.c_v8.String(c_sel.DataVersion)
+                            except Exception:
+                                pass
+                                
                     try:
                         s_fname = self.c_v8.String(c_sel.FileName)
                         if s_fname:
@@ -716,7 +725,7 @@ class NomenclatureManager:
                 
                 c_query = self.c_v8.NewObject("Query")
                 c_query.Text = """
-                    SELECT Ссылка, ХешФайла AS DataVersion, ИмяФайла AS FileName
+                    SELECT Ссылка, ХешФайла AS FileHash, ВерсияДанных AS DataVersion, ИмяФайла AS FileName
                     FROM Справочник.ХранилищеДополнительнойИнформации
                     WHERE Объект = &ProductRef AND ПометкаУдаления = ЛОЖЬ
                     ORDER BY Наименование
@@ -727,14 +736,22 @@ class NomenclatureManager:
                     c_sel = c_res.Select()
                     while c_sel.Next():
                         s_imgUuid = self.c_v8.String(c_sel.Ссылка.UUID())
+                        
                         s_ver = ""
                         try:
-                            s_ver = self.c_v8.XMLСтрока(c_sel.DataVersion)
+                            s_ver = self.c_v8.String(c_sel.FileHash)
                         except Exception:
+                            pass
+                            
+                        if not s_ver:
                             try:
-                                s_ver = self.c_v8.String(c_sel.DataVersion)
+                                s_ver = self.c_v8.XMLСтрока(c_sel.DataVersion)
                             except Exception:
-                                pass
+                                try:
+                                    s_ver = self.c_v8.String(c_sel.DataVersion)
+                                except Exception:
+                                    pass
+                                    
                         try:
                             s_fname = self.c_v8.String(c_sel.FileName)
                             if s_fname:
