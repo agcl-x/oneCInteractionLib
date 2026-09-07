@@ -37,15 +37,22 @@ class OrdersManager:
 
             # Date
             log_sys("Trying to add date to order...")
-            if getattr(c_orderObjIn, "dt_date", None) is not None:
-                order_date = c_orderObjIn.dt_date
-                if order_date.tzinfo is not None:
-                    order_date = order_date.astimezone(self.c_connection.tz_kiev).replace(tzinfo=None)
-                c_newOrder.Дата = order_date
-                log_sys(f"Date from order object successfully added: {order_date}")
-            else:
-                c_newOrder.Дата = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
-                log_sys("Current date/time successfully added")
+            try:
+                if getattr(c_orderObjIn, "dt_date", None) is not None:
+                    order_date = c_orderObjIn.dt_date
+                    if order_date.tzinfo is not None:
+                        order_date = order_date.astimezone(self.c_connection.tz_kiev).replace(tzinfo=None)
+                    c_newOrder.Дата = order_date
+                    log_sys(f"Date from order object successfully added: {order_date}")
+                else:
+                    c_newOrder.Дата = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
+                    log_sys("Current date/time successfully added")
+            except Exception as e:
+                log_sys(f"Failed to set date ({e}), trying fallback", 1)
+                try:
+                    c_newOrder.Дата = datetime.now()
+                except Exception:
+                    pass
 
             # Client / Counteragent
             c_clientRef = None
