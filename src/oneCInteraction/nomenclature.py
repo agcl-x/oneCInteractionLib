@@ -335,7 +335,7 @@ class NomenclatureManager:
                 ON GeneralWholesalePrices.Номенклатура = MainTable.Ссылка
             LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура В (&ProductRefs) AND ТипЦен = &PurchasePriceType AND ХарактеристикаНоменклатуры = ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка)) AS GeneralPurchasePrices
                 ON GeneralPurchasePrices.Номенклатура = MainTable.Ссылка
-            LEFT JOIN РегистрНакопления.ТоварыНаСкладах.Остатки(&CurrentDate, Номенклатура В (&ProductRefs)) AS Stocks
+            LEFT JOIN РегистрНакопления.ТоварыНаСкладах.Остатки(, Номенклатура В (&ProductRefs)) AS Stocks
                 ON Stocks.Номенклатура = MainTable.Ссылка AND Stocks.ХарактеристикаНоменклатуры = ISNULL(Chars.Ссылка, ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка))
             WHERE
                 MainTable.Ссылка В (&ProductRefs)
@@ -564,7 +564,7 @@ class NomenclatureManager:
                 ON ИСТИНА
             LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура = &ProductRef AND ТипЦен = &PurchasePriceType AND ХарактеристикаНоменклатуры = ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка)) AS GeneralPurchasePrices
                 ON ИСТИНА
-            LEFT JOIN РегистрНакопления.ТоварыНаСкладах.Остатки(&CurrentDate, Номенклатура = &ProductRef) AS Stocks
+            LEFT JOIN РегистрНакопления.ТоварыНаСкладах.Остатки(, Номенклатура = &ProductRef) AS Stocks
                 ON Stocks.ХарактеристикаНоменклатуры = ISNULL(Chars.Ссылка, ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка))
             WHERE
                 (Chars.Ссылка ЕСТЬ НЕ NULL)
