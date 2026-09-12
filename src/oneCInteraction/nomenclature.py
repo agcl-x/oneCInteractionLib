@@ -419,6 +419,7 @@ class NomenclatureManager:
             WHERE
                 ТоварыНаСкладах.Номенклатура В (&ProductRefs)
                 AND ТоварыНаСкладах.ВидДвижения = ЗНАЧЕНИЕ(ВидДвиженияНакопления.Приход)
+                AND ТоварыНаСкладах.Регистратор ССЫЛКА Документ.ПоступлениеТоваровУслуг
             GROUP BY
                 ТоварыНаСкладах.Номенклатура
         """
@@ -660,6 +661,7 @@ class NomenclatureManager:
                 WHERE
                     ТоварыНаСкладах.Номенклатура = &ProductRef
                     AND ТоварыНаСкладах.ВидДвижения = ЗНАЧЕНИЕ(ВидДвиженияНакопления.Приход)
+                    AND ТоварыНаСкладах.Регистратор ССЫЛКА Документ.ПоступлениеТоваровУслуг
             """
             c_arrivalQuery.SetParameter("ProductRef", c_productRefIn)
             c_arrivalResult = c_arrivalQuery.Execute()
