@@ -157,23 +157,11 @@ class OrdersManager:
                 # Extract characteristic description from variety if present
                 s_itemProp = ""
                 if getattr(c_item, "c_variety", None) is not None:
-                    parts = []
-                    for char in c_item.c_variety.l_characteristics:
-                        if char.s_name == "Характеристика":
-                            parts.append(char.s_value)
-                        else:
-                            parts.append(f"{char.s_name}: {char.s_value}")
+                    parts = [char.s_value for char in c_item.c_variety.l_characteristics if char.s_value]
                     s_itemProp = ", ".join(parts)
                     
                 log_sys(f"Trying to get nomenclature characteristic({s_itemProp})")
-                c_charRef = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.EmptyRef()
-                if s_itemProp:
-                    c_charRef = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.FindByDescription(
-                        s_itemProp,
-                        True,
-                        c_nomRef
-                    )
-                log_sys("Characteristic successfully fetched")
+                c_charRef = self._resolve_characteristic(c_nomRef, s_itemProp)
                 
                 # Fetch price
                 log_sys("Trying to get nomenclature price...")
@@ -214,8 +202,13 @@ class OrdersManager:
                                     c_foundVariety = c_variety
                                     break
                                 
+                                v_vals = [c.s_value for c in c_variety.l_characteristics if c.s_value]
+                                if s_itemProp in v_vals or s_itemProp == ", ".join(v_vals):
+                                    c_foundVariety = c_variety
+                                    break
+
                                 for c_char in c_variety.l_characteristics:
-                                    if c_char.s_value == s_itemProp or f"{c_char.s_name}: {c_char.s_value}" == s_itemProp:
+                                    if c_char.s_value.strip().lower() == s_itemProp.strip().lower() or f"{c_char.s_name}: {c_char.s_value}".strip().lower() == s_itemProp.strip().lower():
                                         c_foundVariety = c_variety
                                         break
                                 if c_foundVariety:
@@ -493,3 +486,106 @@ class OrdersManager:
         except Exception as e:
             log_sys(f"Error occurred while updating order {c_orderObjIn.n_orderCode}: {e}", 1)
             return False
+
+    def _resolve_characteristic(self, c_nomRef, s_itemProp: str):
+        """
+        Resolves the 1C characteristic reference (ХарактеристикаНоменклатуры) for a given
+        nomenclature and characteristic string.
+        Tries multiple robust resolution strategies:
+        1. 1C Query by Owner (Владелец) - exact, case-insensitive, stripped, or substring match
+        2. FindByDescription with correct 1C signature (Name, Exact, Parent=EmptyRef, Owner=c_nomRef)
+        3. Property values registry (РегистрСведений.ЗначенияСвойствОбъектов)
+        """
+        if not s_itemProp or c_nomRef is None or c_nomRef.IsEmpty():
+            return self.c_v8.Catalogs.ХарактеристикиНоменклатуры.EmptyRef()
+
+        s_cleanProp = s_itemProp.strip()
+
+        # Strategy 1: Direct 1C Query for characteristics owned by this nomenclature
+        try:
+            c_query = self.c_v8.NewObject("Query")
+            c_query.Text = """
+                SELECT
+                    Chars.Ссылка AS Ref,
+                    Chars.Наименование AS Name
+                FROM
+                    Справочник.ХарактеристикиНоменклатуры AS Chars
+                WHERE
+                    Chars.Владелец = &NomRef
+            """
+            c_query.SetParameter("NomRef", c_nomRef)
+            c_res = c_query.Execute()
+            if c_res is not None and not c_res.IsEmpty():
+                c_sel = c_res.Select()
+                candidates = []
+                while c_sel.Next():
+                    char_name = self.c_v8.String(c_sel.Name).strip()
+                    candidates.append((c_sel.Ref, char_name))
+
+                # 1.1 Exact match
+                for ref, name in candidates:
+                    if name == s_cleanProp:
+                        log_sys(f"Characteristic found via exact query match: '{name}'")
+                        return ref
+
+                # 1.2 Case-insensitive match
+                for ref, name in candidates:
+                    if name.lower() == s_cleanProp.lower():
+                        log_sys(f"Characteristic found via case-insensitive query match: '{name}'")
+                        return ref
+
+                # 1.3 Substring / prefix match (e.g. 'Multicam' in 'Колір: Multicam' or vice-versa)
+                for ref, name in candidates:
+                    if name and (name.lower() in s_cleanProp.lower() or s_cleanProp.lower() in name.lower()):
+                        log_sys(f"Characteristic found via substring query match: '{name}' matches '{s_cleanProp}'")
+                        return ref
+        except Exception as e:
+            log_sys(f"Query search for characteristic failed: {e}", 1)
+
+        # Strategy 2: FindByDescription with correct 4-parameter signature (Parent=EmptyRef, Owner=c_nomRef)
+        try:
+            empty_parent = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.EmptyRef()
+            # 2.1 Exact match
+            c_ref = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.FindByDescription(
+                s_cleanProp, True, empty_parent, c_nomRef
+            )
+            if not c_ref.IsEmpty():
+                log_sys(f"Characteristic found via FindByDescription (exact): '{s_cleanProp}'")
+                return c_ref
+
+            # 2.2 Fuzzy/prefix match
+            c_ref = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.FindByDescription(
+                s_cleanProp, False, empty_parent, c_nomRef
+            )
+            if not c_ref.IsEmpty():
+                log_sys(f"Characteristic found via FindByDescription (fuzzy): '{s_cleanProp}'")
+                return c_ref
+        except Exception as e:
+            log_sys(f"FindByDescription search for characteristic failed: {e}", 1)
+
+        # Strategy 3: Property values registry fallback
+        try:
+            c_query = self.c_v8.NewObject("Query")
+            c_query.Text = """
+                SELECT DISTINCT Props.Объект AS Ref
+                FROM РегистрСведений.ЗначенияСвойствОбъектов AS Props
+                WHERE Props.Значение.Наименование = &Value
+                  AND Props.Объект В (
+                      SELECT Ссылка FROM Справочник.ХарактеристикиНоменклатуры
+                      WHERE Владелец = &NomRef
+                  )
+            """
+            c_query.SetParameter("Value", s_cleanProp)
+            c_query.SetParameter("NomRef", c_nomRef)
+            c_res = c_query.Execute()
+            if c_res is not None and not c_res.IsEmpty():
+                c_sel = c_res.Select()
+                if c_sel.Next():
+                    log_sys(f"Characteristic found via property registry: '{s_cleanProp}'")
+                    return c_sel.Ref
+        except Exception as e:
+            log_sys(f"Property registry search for characteristic failed: {e}", 1)
+
+        s_nomName = getattr(c_nomRef, 'Наименование', '')
+        log_sys(f"Characteristic '{s_cleanProp}' NOT found in 1C for nomenclature '{s_nomName}'", 1)
+        return self.c_v8.Catalogs.ХарактеристикиНоменклатуры.EmptyRef()
