@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from .log import log_sys
 from . import structures
 
@@ -13,12 +13,12 @@ class OrdersManager:
     def push(self, c_orderObjIn) -> str:
         """Pushes a new customer order to 1C database, returning the created order number or empty string."""
         if not self.c_v8:
-            log_sys("Failed to push order: No connection to 1C. Returning None", 1)
-            return None
+            log_sys("Failed to push order: No connection to 1C. Returning \"\"", 1)
+            return ""
             
-        if not self.c_connection.s_warehouse_code or not self.c_connection.s_counteragent_code or not self.c_connection.s_organisation_code:
-            log_sys("Failed to push order: No warehouse code and/or counteragent code and/or organisation code. Returning None", 1)
-            return None
+        if not self.c_connection.s_warehouse_code or not self.c_connection.s_organisation_code:
+            log_sys("Failed to push order: No warehouse code and/or organisation code. Returning \"\"", 1)
+            return ""
 
         try:
             c_newOrder = self.c_v8.Documents.ЗаказПокупателя.CreateDocument()
@@ -37,13 +37,26 @@ class OrdersManager:
 
             # Date
             log_sys("Trying to add date to order...")
-            c_newOrder.Дата = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
-            log_sys("Date successfully added")
+            try:
+                if getattr(c_orderObjIn, "dt_date", None) is not None:
+                    order_date = c_orderObjIn.dt_date
+                    if order_date.tzinfo is not None:
+                        order_date = order_date.astimezone(self.c_connection.tz_kiev).replace(tzinfo=None)
+                    c_newOrder.Дата = order_date
+                    log_sys(f"Date from order object successfully added: {order_date}")
+                else:
+                    c_newOrder.Дата = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
+                    log_sys("Current date/time successfully added")
+            except Exception as e:
+                log_sys(f"Failed to set date ({e}), trying fallback", 1)
+                try:
+                    c_newOrder.Дата = datetime.now()
+                except Exception:
+                    pass
 
             # Client / Counteragent
             c_clientRef = None
             c_customer = getattr(c_orderObjIn, "c_orderCustomer", None)
-            b_isBotCounteragent = False
             
             if c_customer:
                 log_sys("Customer structure found in order. Trying to resolve counteragent in 1C...")
@@ -66,24 +79,16 @@ class OrdersManager:
                                 c_clientRef = c_ref
                                 log_sys("New customer created and resolved.")
                 except Exception as e:
-                    log_sys(f"Failed to resolve customer: {e}. Falling back to bot counteragent...", 1)
+                    log_sys(f"Failed to resolve customer: {e}.", 1)
             
-            # Fallback to Bot Counteragent if customer resolution failed or customer wasn't provided
             if not c_clientRef or c_clientRef.IsEmpty():
-                b_isBotCounteragent = True
-                log_sys(f"Falling back to bot counteragent with code: {self.c_connection.s_counteragent_code}")
-                try:
-                    c_clientRef = self.c_v8.Catalogs.Контрагенты.FindByCode(self.c_connection.s_counteragent_code)
-                    if c_clientRef.IsEmpty():
-                        log_sys(f"Can't find bot contragent by code: {self.c_connection.s_counteragent_code}. Returning \"\"", 1)
-                        return ""
-                except Exception as e:
-                    log_sys(f"Failed to resolve bot contragent: {e}. Returning \"\"", 1)
-                    return ""
+                log_sys("Customer reference is empty or not resolved in 1C. Returning \"\"", 1)
+                return ""
 
             try:
                 c_newOrder.Контрагент = c_clientRef
-                self.c_connection.customers.ensure_default_contract(c_clientRef)
+                s_role = getattr(c_orderObjIn.c_orderCustomer, "s_role", "")
+                self.c_connection.customers.ensure_default_contract(c_clientRef, s_role)
                 c_newOrder.ДоговорКонтрагента = c_clientRef.ОсновнойДоговорКонтрагента
                 log_sys("Contragent and ContragentContract successfully added to order")
             except Exception as e:
@@ -123,7 +128,11 @@ class OrdersManager:
             log_sys("Trying to get price type...")
             s_price_type_name = getattr(c_orderObjIn, "s_price_type", "")
             if not s_price_type_name:
-                s_price_type_name = "Розничная"
+                s_role = getattr(c_orderObjIn.c_orderCustomer, "s_role", "")
+                if s_role in ["wholesaler", "manager"]:
+                    s_price_type_name = "Оптовая"
+                else:
+                    s_price_type_name = "Розничная"
             c_priceTypeRef = self.c_connection.get_price_type_ref(s_price_type_name)
             c_newOrder.ТипЦен = c_priceTypeRef
             log_sys(f"Price type ({s_price_type_name}) successfully added to order")
@@ -136,8 +145,8 @@ class OrdersManager:
             # Order Items List
             log_sys("Parsing orderItemList")
             for c_item in c_orderObjIn.l_orderItemsList:
-                log_sys(f"Trying to get nomenclature by code ({c_item.s_productArticle})")
-                c_nomRef = self.c_v8.Catalogs.Номенклатура.FindByCode(c_item.s_productArticle)
+                log_sys(f"Trying to get nomenclature by code ({c_item.s_productCode})")
+                c_nomRef = self.c_v8.Catalogs.Номенклатура.FindByCode(c_item.s_productCode)
 
                 if c_nomRef.IsEmpty():
                     log_sys("Nomenclature not found, skipping...")
@@ -145,26 +154,45 @@ class OrdersManager:
 
                 log_sys("Nomenclature successfully fetched")
                 
-                # Extract characteristic description from variety if present
-                s_itemProp = ""
+                # Extract characteristic and resolve reference
+                s_char_uuid = getattr(c_item.c_variety, "s_char_uuid", "") if getattr(c_item, "c_variety", None) is not None else ""
+                c_charRef = None
+
+                full_parts = []
+                val_parts = []
                 if getattr(c_item, "c_variety", None) is not None:
-                    parts = []
                     for char in c_item.c_variety.l_characteristics:
-                        if char.s_name == "Характеристика":
-                            parts.append(char.s_value)
+                        if char.s_value:
+                            val_parts.append(char.s_value)
+                            if char.s_name:
+                                full_parts.append(f"{char.s_name}: {char.s_value}")
+                            else:
+                                full_parts.append(char.s_value)
+
+                s_itemProp = ", ".join(full_parts) if full_parts else ", ".join(val_parts)
+                s_itemProp_vals = ", ".join(val_parts)
+
+                # 1. First priority: Resolve characteristic by UUID
+                if s_char_uuid:
+                    try:
+                        log_sys(f"Resolving characteristic by UUID: {s_char_uuid}")
+                        c_uid = self.c_v8.NewObject("УникальныйИдентификатор", s_char_uuid)
+                        c_ref = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.GetRef(c_uid)
+                        if c_ref is not None and not c_ref.IsEmpty() and c_ref.GetObject() is not None:
+                            c_charRef = c_ref
+                            log_sys(f"Characteristic successfully resolved by UUID: {s_char_uuid}")
                         else:
-                            parts.append(f"{char.s_name}: {char.s_value}")
-                    s_itemProp = ", ".join(parts)
-                    
-                log_sys(f"Trying to get nomenclature characteristic({s_itemProp})")
-                c_charRef = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.EmptyRef()
-                if s_itemProp:
-                    c_charRef = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.FindByDescription(
-                        s_itemProp,
-                        True,
-                        c_nomRef
-                    )
-                log_sys("Characteristic successfully fetched")
+                            log_sys(f"Characteristic with UUID '{s_char_uuid}' not found or empty object in 1C.", 1)
+                    except Exception as e:
+                        log_sys(f"UUID characteristic lookup failed ({s_char_uuid}): {e}. Falling back to text search.", 1)
+
+                # 2. Second priority: Fallback to text search
+                if c_charRef is None or c_charRef.IsEmpty():
+                    log_sys(f"Trying to get nomenclature characteristic by text ({s_itemProp})")
+                    c_charRef = self._resolve_characteristic(c_nomRef, s_itemProp)
+                    if c_charRef.IsEmpty() and s_itemProp_vals and s_itemProp_vals != s_itemProp:
+                        log_sys(f"Trying fallback characteristic search by values only ({s_itemProp_vals})")
+                        c_charRef = self._resolve_characteristic(c_nomRef, s_itemProp_vals)
                 
                 # Fetch price
                 log_sys("Trying to get nomenclature price...")
@@ -197,16 +225,34 @@ class OrdersManager:
                     # 2. Get the actual price from 1C
                     n_1cPrice = 0.0
                     try:
-                        c_tempNom = self.c_connection.nomenclature.get(s_codeIn=c_item.s_productArticle)
+                        c_tempNom = self.c_connection.nomenclature.get(s_codeIn=c_item.s_productCode)
                         if c_tempNom and c_tempNom.l_variety:
                             c_foundVariety = None
                             for c_variety in c_tempNom.l_variety:
+                                # 2.1 Match by char UUID if available
+                                if s_char_uuid and getattr(c_variety, "s_char_uuid", "") == s_char_uuid:
+                                    c_foundVariety = c_variety
+                                    break
+
                                 if not s_itemProp:
                                     c_foundVariety = c_variety
                                     break
                                 
+                                v_vals = [c.s_value for c in c_variety.l_characteristics if c.s_value]
+                                v_full = [f"{c.s_name}: {c.s_value}" for c in c_variety.l_characteristics if c.s_value]
+                                if (s_itemProp in v_vals
+                                    or s_itemProp == ", ".join(v_vals)
+                                    or s_itemProp == ", ".join(v_full)
+                                    or (s_itemProp_vals and (s_itemProp_vals == ", ".join(v_vals) or s_itemProp_vals in v_vals))):
+                                    c_foundVariety = c_variety
+                                    break
+
                                 for c_char in c_variety.l_characteristics:
-                                    if c_char.s_value == s_itemProp or f"{c_char.s_name}: {c_char.s_value}" == s_itemProp:
+                                    c_full_val = f"{c_char.s_name}: {c_char.s_value}".strip().lower()
+                                    c_val_only = c_char.s_value.strip().lower()
+                                    if (c_val_only == s_itemProp.strip().lower() 
+                                        or c_full_val == s_itemProp.strip().lower()
+                                        or (s_itemProp_vals and c_val_only == s_itemProp_vals.strip().lower())):
                                         c_foundVariety = c_variety
                                         break
                                 if c_foundVariety:
@@ -222,18 +268,22 @@ class OrdersManager:
                     # 3. Compare and set final actual price
                     if has_variety:
                         if n_1cPrice > 0.0:
-                            log_sys(f"Comparing variety price ({n_passedPrice}) with 1C price ({n_1cPrice}) for {c_item.s_productArticle}")
+                            log_sys(f"Comparing variety price ({n_passedPrice}) with 1C price ({n_1cPrice}) for {c_item.s_productCode}")
                             if abs(n_passedPrice - n_1cPrice) > 0.01:
-                                log_sys(f"Price mismatch detected for {c_item.s_productArticle}: variety price is {n_passedPrice}, but 1C price is {n_1cPrice}. Using 1C price.", 1)
+                                log_sys(f"Price mismatch detected for {c_item.s_productCode}: variety price is {n_passedPrice}, but 1C price is {n_1cPrice}. Using 1C price.", 1)
                             n_actualPrice = n_1cPrice
                         else:
-                            log_sys(f"Could not fetch 1C price for {c_item.s_productArticle} or price is 0. Using variety price ({n_passedPrice}).")
+                            log_sys(f"Could not fetch 1C price for {c_item.s_productCode} or price is 0. Using variety price ({n_passedPrice}).")
                             n_actualPrice = n_passedPrice
                     else:
-                        n_actualPrice = n_1cPrice
+                        n_actualPrice = n_1cPrice if n_1cPrice > 0.0 else n_passedPrice
+
+                    # Final fallback: if n_actualPrice is still 0.0 but n_passedPrice > 0.0
+                    if n_actualPrice == 0.0 and n_passedPrice > 0.0:
+                        n_actualPrice = n_passedPrice
                 except Exception as e:
-                    log_sys(f"Cannot get nomenclature price: {e}. Setting price to 0", 1)
-                    n_actualPrice = 0.0
+                    log_sys(f"Cannot get nomenclature price: {e}. Setting price to passedPrice or 0", 1)
+                    n_actualPrice = n_passedPrice if 'n_passedPrice' in locals() and n_passedPrice > 0.0 else 0.0
 
                 log_sys("Creating new orderItem table row. Trying to add new nomenclature...")
                 try:
@@ -245,30 +295,37 @@ class OrdersManager:
                     c_row.Коэффициент = 1
                     c_row.Цена = float(n_actualPrice)
                     c_row.Сумма = float(c_row.Количество * c_row.Цена)
+
+                    # Apply 20% discount for dropshippers
+                    s_role = getattr(c_orderObjIn.c_orderCustomer, "s_role", "")
+                    if s_role == "dropshipper":
+                        try:
+                            c_row.ПроцентСкидкиНаценки = 20.0
+                        except Exception:
+                            try:
+                                c_row.ПроцентРучнойСкидки = 20.0
+                            except Exception:
+                                pass
+                        c_row.Сумма = float(c_row.Количество * c_row.Цена * 0.8)
+
                     log_sys("Nomenclature was successfully added")
                 except Exception as e:
                     log_sys(f"Failed adding nomenclature: {e}", 1)
                 
-            # Add customer info and metadata directly to order comment before writing
-            s_comment_parts = []
-            if b_isBotCounteragent and c_customer:
-                s_pib = f"{c_customer.s_customerSurname} {c_customer.s_customerName} {c_customer.s_customerPatronymic}".strip()
-                if s_pib:
-                    s_comment_parts.append(s_pib)
-                if c_customer.s_customerPhone:
-                    s_comment_parts.append(c_customer.s_customerPhone)
-                if c_customer.s_customerId:
-                    s_comment_parts.append(c_customer.s_customerId)
-            
+            # Set comment from Order structure (controlled by B2B)
+            s_base_comment = getattr(c_orderObjIn, "s_comment", "") or ""
+            s_extra_parts = []
             s_ttn = getattr(c_orderObjIn, "s_TTN", "")
             s_status = getattr(c_orderObjIn, "s_status", "")
             if s_ttn:
-                s_comment_parts.append(s_ttn)
+                s_extra_parts.append(f"ТТН: {s_ttn}")
             if s_status:
-                s_comment_parts.append(s_status)
-                
-            if s_comment_parts:
-                c_newOrder.Комментарий = " ".join(s_comment_parts)
+                s_extra_parts.append(f"Статус: {s_status}")
+            s_full_comment = s_base_comment
+            if s_extra_parts:
+                s_full_comment = (s_base_comment + (" | " if s_base_comment else "") + " | ".join(s_extra_parts)).strip(" |")
+            c_newOrder.Комментарий = s_full_comment
+            log_sys(f"Order comment: {s_full_comment}")
 
             try:
                 log_sys("Everything done. Trying to post order...")
@@ -335,22 +392,38 @@ class OrdersManager:
             l_orderItemsList = []
             for c_row in c_orderObj1c.Товары:
                 s_article = c_row.Номенклатура.Код
+                s_name = ""
+                try:
+                    s_name = self.c_v8.String(c_row.Номенклатура.Наименование)
+                except Exception as e:
+                    log_sys(f"Failed to get product name for {s_article}: {e}", 1)
                 c_variety = None
                 c_charRef = c_row.ХарактеристикаНоменклатуры
+                l_chars = []
                 if not c_charRef.IsEmpty():
                     s_charName = c_charRef.Наименование
                     l_chars = self.c_connection.characteristics.get(c_charRef, s_charName)
-                    c_variety = structures.Variety(
-                        c_priceRetailIn=structures.Price(c_row.Цена, s_type="Розничная"),
-                        c_priceOptIn=structures.Price(0.0, s_type="Оптовая"),
-                        d_countIn={},
-                        l_characteristicsIn=l_chars
-                    )
+                
+                # Always create Variety to preserve row price
+                s_c_uuid = ""
+                if not c_charRef.IsEmpty():
+                    try:
+                        s_c_uuid = self.c_v8.String(c_charRef.UUID())
+                    except Exception:
+                        pass
+                c_variety = structures.Variety(
+                    c_priceRetailIn=structures.Price(c_row.Цена, s_type="Розничная"),
+                    c_priceOptIn=structures.Price(0.0, s_type="Оптовая"),
+                    d_countIn={},
+                    l_characteristicsIn=l_chars,
+                    s_char_uuidIn=s_c_uuid
+                )
 
                 c_item = structures.OrderItem(
-                    s_productArticleIn=s_article,
+                    s_productCodeIn=s_article,
                     c_varietyIn=c_variety,
-                    n_productCountIn=c_row.Количество
+                    n_productCountIn=c_row.Количество,
+                    s_productNameIn=s_name
                 )
                 l_orderItemsList.append(c_item)
 
@@ -369,56 +442,71 @@ class OrdersManager:
             log_sys(f"Error occurred while retrieving order {s_codeIn}: {e}", 1)
             return None
 
-    def get_today(self) -> list:
-        """Retrieves all orders created today for the configured counteragent bot."""
+    def get_by_date(self, target_date, s_counteragent_code: str = "") -> list:
+        """Retrieves all orders for a specific date (date or datetime object), optionally filtered by counteragent or counteragent group code."""
         if not self.c_v8:
-            log_sys("Failed to get today's orders: No connection to 1C.", 1)
+            log_sys("Failed to get orders by date: No connection to 1C.", 1)
             return []
 
-        if len(self.c_connection.s_counteragent_code) < 1:
-            log_sys("Failed to get today's orders: No counteragent code. Returning []", 1)
-            return []
-            
         try:
-            log_sys("Fetching today's orders for bot counteragent...")
-            c_clientRef = self.c_v8.Catalogs.Контрагенты.FindByCode(self.c_connection.s_counteragent_code)
-
-            if c_clientRef is None or c_clientRef.IsEmpty():
-                log_sys(f"Counteragent with code {self.c_connection.s_counteragent_code} not found in 1C.", 1)
+            log_sys(f"Fetching orders for date {target_date}...")
+            
+            if isinstance(target_date, datetime):
+                dt_obj = target_date
+            elif isinstance(target_date, date):
+                dt_obj = datetime.combine(target_date, datetime.min.time())
+            elif hasattr(target_date, "year") and hasattr(target_date, "month") and hasattr(target_date, "day"):
+                dt_obj = datetime(target_date.year, target_date.month, target_date.day)
+            else:
+                log_sys(f"Invalid date format passed to get_by_date: {target_date}. Returning []", 1)
                 return []
 
-            c_startOfToday = datetime.now(self.c_connection.tz_kiev).replace(
-                hour=0, minute=0, second=0, microsecond=0, tzinfo=None
-            )
+            if dt_obj.tzinfo is not None:
+                dt_obj = dt_obj.astimezone(self.c_connection.tz_kiev).replace(tzinfo=None)
+
+            c_startDate = dt_obj.replace(hour=0, minute=0, second=0, microsecond=0)
+            c_endDate = dt_obj.replace(hour=23, minute=59, second=59, microsecond=0)
+
             c_query = self.c_v8.NewObject("Query")
-            c_query.Text = """
+            
+            s_query_text = """
                 SELECT Номер AS Number
                 FROM Документ.ЗаказПокупателя
-                WHERE Дата >= &StartDate
-                  AND Контрагент = &ClientBot
+                WHERE Дата >= &StartDate AND Дата <= &EndDate
                   AND ПометкаУдаления = FALSE
-                ORDER BY Дата DESC
+                  AND Проведен = TRUE
             """
-            c_query.SetParameter("StartDate", c_startOfToday)
-            c_query.SetParameter("ClientBot", c_clientRef)
+
+            if s_counteragent_code:
+                c_clientRef = self.c_v8.Catalogs.Контрагенты.FindByCode(s_counteragent_code)
+                if c_clientRef is None or c_clientRef.IsEmpty():
+                    log_sys(f"Counteragent with code '{s_counteragent_code}' not found in 1C. Returning []", 1)
+                    return []
+                s_query_text += "\n  AND Контрагент В ИЕРАРХИИ(&ClientRef)"
+                c_query.SetParameter("ClientRef", c_clientRef)
+
+            s_query_text += "\nORDER BY Дата DESC"
+            c_query.Text = s_query_text
+            c_query.SetParameter("StartDate", c_startDate)
+            c_query.SetParameter("EndDate", c_endDate)
 
             c_result = c_query.Execute()
             l_ordersList = []
 
             if not c_result.IsEmpty():
                 c_selection = c_result.Select()
-                log_sys("Found some orders. Starting to parse...")
+                log_sys("Found some orders for the date. Starting to parse...")
 
                 while c_selection.Next():
                     c_orderObj = self.get(c_selection.Number)
                     if c_orderObj:
                         l_ordersList.append(c_orderObj)
 
-            log_sys(f"Successfully retrieved {len(l_ordersList)} orders for today.")
+            log_sys(f"Successfully retrieved {len(l_ordersList)} orders for date {target_date}.")
             return l_ordersList
 
         except Exception as e:
-            log_sys(f"Error in getTodayOrders: {e}", 1)
+            log_sys(f"Error in get_by_date: {e}", 1)
             return []
 
     def update_info(self, c_orderObjIn) -> bool:
@@ -453,3 +541,106 @@ class OrdersManager:
         except Exception as e:
             log_sys(f"Error occurred while updating order {c_orderObjIn.n_orderCode}: {e}", 1)
             return False
+
+    def _resolve_characteristic(self, c_nomRef, s_itemProp: str):
+        """
+        Resolves the 1C characteristic reference (ХарактеристикаНоменклатуры) for a given
+        nomenclature and characteristic string.
+        Tries multiple robust resolution strategies:
+        1. 1C Query by Owner (Владелец) - exact, case-insensitive, stripped, or substring match
+        2. FindByDescription with correct 1C signature (Name, Exact, Parent=EmptyRef, Owner=c_nomRef)
+        3. Property values registry (РегистрСведений.ЗначенияСвойствОбъектов)
+        """
+        if not s_itemProp or c_nomRef is None or c_nomRef.IsEmpty():
+            return self.c_v8.Catalogs.ХарактеристикиНоменклатуры.EmptyRef()
+
+        s_cleanProp = s_itemProp.strip()
+
+        # Strategy 1: Direct 1C Query for characteristics owned by this nomenclature
+        try:
+            c_query = self.c_v8.NewObject("Query")
+            c_query.Text = """
+                SELECT
+                    Chars.Ссылка AS Ref,
+                    Chars.Наименование AS Name
+                FROM
+                    Справочник.ХарактеристикиНоменклатуры AS Chars
+                WHERE
+                    Chars.Владелец = &NomRef
+            """
+            c_query.SetParameter("NomRef", c_nomRef)
+            c_res = c_query.Execute()
+            if c_res is not None and not c_res.IsEmpty():
+                c_sel = c_res.Select()
+                candidates = []
+                while c_sel.Next():
+                    char_name = self.c_v8.String(c_sel.Name).strip()
+                    candidates.append((c_sel.Ref, char_name))
+
+                # 1.1 Exact match
+                for ref, name in candidates:
+                    if name == s_cleanProp:
+                        log_sys(f"Characteristic found via exact query match: '{name}'")
+                        return ref
+
+                # 1.2 Case-insensitive match
+                for ref, name in candidates:
+                    if name.lower() == s_cleanProp.lower():
+                        log_sys(f"Characteristic found via case-insensitive query match: '{name}'")
+                        return ref
+
+                # 1.3 Substring / prefix match (e.g. 'Multicam' in 'Колір: Multicam' or vice-versa)
+                for ref, name in candidates:
+                    if name and (name.lower() in s_cleanProp.lower() or s_cleanProp.lower() in name.lower()):
+                        log_sys(f"Characteristic found via substring query match: '{name}' matches '{s_cleanProp}'")
+                        return ref
+        except Exception as e:
+            log_sys(f"Query search for characteristic failed: {e}", 1)
+
+        # Strategy 2: FindByDescription with correct 4-parameter signature (Parent=EmptyRef, Owner=c_nomRef)
+        try:
+            empty_parent = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.EmptyRef()
+            # 2.1 Exact match
+            c_ref = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.FindByDescription(
+                s_cleanProp, True, empty_parent, c_nomRef
+            )
+            if not c_ref.IsEmpty():
+                log_sys(f"Characteristic found via FindByDescription (exact): '{s_cleanProp}'")
+                return c_ref
+
+            # 2.2 Fuzzy/prefix match
+            c_ref = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.FindByDescription(
+                s_cleanProp, False, empty_parent, c_nomRef
+            )
+            if not c_ref.IsEmpty():
+                log_sys(f"Characteristic found via FindByDescription (fuzzy): '{s_cleanProp}'")
+                return c_ref
+        except Exception as e:
+            log_sys(f"FindByDescription search for characteristic failed: {e}", 1)
+
+        # Strategy 3: Property values registry fallback
+        try:
+            c_query = self.c_v8.NewObject("Query")
+            c_query.Text = """
+                SELECT DISTINCT Props.Объект AS Ref
+                FROM РегистрСведений.ЗначенияСвойствОбъектов AS Props
+                WHERE Props.Значение.Наименование = &Value
+                  AND Props.Объект В (
+                      SELECT Ссылка FROM Справочник.ХарактеристикиНоменклатуры
+                      WHERE Владелец = &NomRef
+                  )
+            """
+            c_query.SetParameter("Value", s_cleanProp)
+            c_query.SetParameter("NomRef", c_nomRef)
+            c_res = c_query.Execute()
+            if c_res is not None and not c_res.IsEmpty():
+                c_sel = c_res.Select()
+                if c_sel.Next():
+                    log_sys(f"Characteristic found via property registry: '{s_cleanProp}'")
+                    return c_sel.Ref
+        except Exception as e:
+            log_sys(f"Property registry search for characteristic failed: {e}", 1)
+
+        s_nomName = getattr(c_nomRef, 'Наименование', '')
+        log_sys(f"Characteristic '{s_cleanProp}' NOT found in 1C for nomenclature '{s_nomName}'", 1)
+        return self.c_v8.Catalogs.ХарактеристикиНоменклатуры.EmptyRef()

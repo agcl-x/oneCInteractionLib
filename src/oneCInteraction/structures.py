@@ -11,7 +11,9 @@ class Nomenclature:
         s_parent_uuidIn: str = "",
         s_uuidIn: str = "",
         s_codeIn: str = "",
-        l_imagesIn: list = None
+        l_imagesIn: list = None,
+        dt_last_arrivalIn: datetime = None,
+        l_propertiesIn: list = None
     ):
         self.s_name = s_nameIn
         self.s_article = s_articleIn
@@ -22,6 +24,8 @@ class Nomenclature:
         self.s_uuid = s_uuidIn
         self.s_code = s_codeIn
         self.l_images = l_imagesIn if l_imagesIn is not None else []
+        self.dt_last_arrival = dt_last_arrivalIn
+        self.l_properties = l_propertiesIn if l_propertiesIn is not None else []
 
 class Price:
     def __init__(self, n_value: float, dt_assigned: datetime = None, s_type: str = ""):
@@ -40,18 +44,28 @@ class Variety:
         c_priceOptIn: Price,
         d_countIn: dict,
         l_characteristicsIn: list,
-        c_pricePurchaseIn: Price = None
+        c_pricePurchaseIn: Price = None,
+        s_char_uuidIn: str = ""
     ):
         self.c_priceRetail = c_priceRetailIn
         self.c_priceOpt = c_priceOptIn
         self.c_pricePurchase = c_pricePurchaseIn if c_pricePurchaseIn is not None else Price(0.0, s_type="Закупочная")
         self.d_count = d_countIn
         self.l_characteristics = l_characteristicsIn
+        self.s_char_uuid = s_char_uuidIn
 
 class Characteristic:
     def __init__(self, s_nameIn: str, s_valueIn: str):
         self.s_name = s_nameIn
         self.s_value = s_valueIn
+
+class Property:
+    def __init__(self, s_nameIn: str, s_valueIn: str):
+        self.s_name = s_nameIn
+        self.s_value = s_valueIn
+
+    def __repr__(self):
+        return f"Property(name='{self.s_name}', value='{self.s_value}')"
 
 class Group:
     def __init__(
@@ -94,7 +108,8 @@ class Customer:
         s_customerPatronymicIn: str = "",
         s_customerPhoneIn: str = "",
         s_customerAddressIn: str = "",
-        s_customerCodeIn: str = ""
+        s_customerCodeIn: str = "",
+        s_roleIn: str = ""
     ):
         self.s_customerId = s_customerIdIn
         self.s_customerName = s_customerNameIn
@@ -103,17 +118,20 @@ class Customer:
         self.s_customerPhone = s_customerPhoneIn
         self.s_customerAddress = s_customerAddressIn
         self.s_customerCode = s_customerCodeIn
+        self.s_role = s_roleIn
 
 class OrderItem:
     def __init__(
         self,
-        s_productArticleIn: str,
+        s_productCodeIn: str,
         c_varietyIn: Variety = None,
-        n_productCountIn: int = 1
+        n_productCountIn: int = 1,
+        s_productNameIn: str = ""
     ):
-        self.s_productArticle = s_productArticleIn
+        self.s_productCode = s_productCodeIn
         self.c_variety = c_varietyIn
         self.n_productCount = n_productCountIn
+        self.s_productName = s_productNameIn
 
 
 class Order:
@@ -123,14 +141,32 @@ class Order:
         l_orderItemsListIn: list = None,
         n_orderCodeIn: int = 0,
         s_price_typeIn: str = "",
-        s_commentIn: str = ""
+        s_commentIn: str = "",
+        dt_dateIn: datetime = None
     ):
         self.c_orderCustomer = c_orderCustomerIn
         self.l_orderItemsList = l_orderItemsListIn if l_orderItemsListIn is not None else []
         self.s_TTN = ""
         self.s_status = ""
-        self.s_date = datetime.now().strftime("%H:%M %d.%m.%Y")
+        self.dt_date = dt_dateIn
+        self.s_date = dt_dateIn.strftime("%H:%M %d.%m.%Y") if dt_dateIn else datetime.now().strftime("%H:%M %d.%m.%Y")
         self.n_orderCode = n_orderCodeIn
         self.s_price_type = s_price_typeIn
         self.s_comment = s_commentIn
+
+
+class DiscountGroup:
+    def __init__(
+        self,
+        s_nameIn: str,
+        s_document_numberIn: str,
+        s_discount_type_codeIn: str,
+        n_discount_percentIn: float,
+        l_nomenclaturesIn: list
+    ):
+        self.s_name = s_nameIn
+        self.s_document_number = s_document_numberIn
+        self.s_discount_type_code = s_discount_type_codeIn
+        self.n_discount_percent = float(n_discount_percentIn)
+        self.l_nomenclatures = l_nomenclaturesIn
 

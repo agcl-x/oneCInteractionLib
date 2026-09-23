@@ -6,6 +6,7 @@ A modular Python library for interacting with «1C:Enterprise» databases via a 
 - **Full COM Connection Support** via `win32com`.
 - **Nomenclature and Categories Management**: retrieve group trees, batch load products, prices, and stock balances across warehouses.
 - **Product Characteristics**: read variant properties from information registers or parse text descriptions.
+- **Product Properties (Metadata)**: read and write general metadata (properties) of Nomenclature items to/from information registers.
 - **Images**: download product images directly from the 1C database to the local disk.
 - **Order Management**: create customer orders, track statuses, and update document comments with customer contact details.
 - **Smart Logging**: automatically creates log files in the directory of the host project importing the library.
@@ -32,6 +33,8 @@ The library is built on the principle of composition: the main `Connection` clas
 - `Connection.characteristics` (`CharacteristicsManager`) — reads properties of product variants.
 - `Connection.orders` (`OrdersManager`) — handles creation and updates of customer orders.
 - `Connection.customers` (`CustomersManager`) — manages customers/counterparties.
+- `Connection.discounts` (`DiscountsManager`) — manages discount groups and active nomenclature discounts.
+- `Connection.properties` (`PropertiesManager`) — manages reading and writing general product properties.
 
 ---
 
@@ -50,9 +53,8 @@ def __init__(self, s_oneCDatabasePathIn: str, s_usernameIn: str, s_passwordIn: s
 
 #### Key Attributes:
 - `s_warehouse_code` (str): 1C warehouse code for new orders.
-- `s_counteragent_code` (str): 1C counteragent (customer) code for new orders.
 - `s_organisation_code` (str): 1C organization code for new orders.
-- `sl_price_types` (list): List of price type names to cache automatically (defaults to `["Розничная", "Оптовая"]`).
+- `sl_price_types` (list): List of price type names to cache automatically (defaults to `["Розничная", "Оптовая", "Закупочная"]`).
 - `c_v8`: The active 1C COM connection object (equals `None` if not connected).
 
 #### Methods:
@@ -76,6 +78,8 @@ Represents a product.
 - `s_uuid` (str): Unique identifier (UUID) of the product in 1C.
 - `s_code` (str): 1C product code.
 - `l_images` (list): List of image UUIDs associated with the product in 1C.
+- `dt_last_arrival` (datetime): Date of the last physical arrival of the product to the warehouse from 1C.
+- `l_properties` (list of `Property`): List of general properties (metadata) of the product.
 
 #### `Price`
 Represents a price with its value, assignment date, and type.
@@ -95,6 +99,11 @@ Represents a product variant with specific prices and stock levels.
 A key-value pair for a variant property.
 - `s_name` (str): Property name (e.g., `"Color"`).
 - `s_value` (str): Property value (e.g., `"Red"`).
+
+#### `Property`
+A key-value pair for a product property (metadata).
+- `s_name` (str): Property name (e.g., `"Material"`).
+- `s_value` (str): Property value (e.g., `"Cotton"`).
 
 #### `Group`
 A product group (category).
@@ -125,8 +134,8 @@ Information about the buyer.
 
 #### `OrderItem`
 An item in the order.
-- `s_productArticle` (str): Product article (SKU).
-- `s_productPropertie` (str): Selected characteristic name (if any).
+- `s_productCode` (str): Product 1C code.
+- `c_variety` (`Variety`): Selected variant/characteristic object (if any).
 - `n_productCount` (int): Quantity of items.
 
 #### `Order`
@@ -137,8 +146,18 @@ A buyer's order.
 - `s_status` (str): Status of the order in 1C.
 - `s_date` (str): Order creation date (automatically generated).
 - `n_orderCode` (str / int): Order number in 1C.
+- `s_price_type` (str): Price type name used for the order (e.g. `"Розничная"`, `"Оптовая"`, `"Закупочная"`).
+- `s_comment` (str): Additional comment/notes for the order (often parsed to extract Telegram ID).
 
 Calling `str(order_obj)` returns a nicely formatted HTML string suitable for sending to a Telegram bot.
+
+#### `DiscountGroup`
+Represents a group of nomenclature discounts.
+- `s_name` (str): Discount group name or comment.
+- `s_document_number` (str): Number of the document that set the discount in 1C.
+- `s_discount_type_code` (str): Discount type code (e.g. `"B2B"`).
+- `n_discount_percent` (float): Discount percentage.
+- `l_nomenclatures` (list of dict): List of products in the discount group (each product is a dict with keys `"code"`, `"name"`, `"uuid"`, and `"char_name"`).
 
 ---
 
@@ -146,13 +165,15 @@ Calling `str(order_obj)` returns a nicely formatted HTML string suitable for sen
 Defined in [nomenclature.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/nomenclature.py).
 
 - `get(s_articleIn: str = "", s_nameIn: str = "", s_codeIn: str = "") -> Nomenclature | None`
-  Searches for and returns a product by its article, name, or code. Fetches retail/wholesale prices, stock balances by warehouses, and characteristics.
+  Searches for and returns a product by its article, name, or code. Fetches retail, wholesale, and purchase prices, stock balances by warehouses, characteristics, and the parent group's UUID (`s_parent_uuid`).
+- `search(s_queryIn: str, s_searchByIn: str = "all") -> list`
+  Searches for nomenclature items by a query string matching the name, article, code, or all of them. Returns a list of `Nomenclature` objects (without full detailed price/stock breakdown, but containing basic fields).
 - `get_images(c_productObjIn: Nomenclature, s_imageDirIn: str = None) -> list`
   Downloads all attached images for a product from 1C. Saves them in the specified directory `s_imageDirIn` (defaults to `data/images`). Returns a list of the saved filenames (e.g., `["[uuid]_0.jpg"]`).
 - `get_by_group(c_groupRefIn) -> list`
   Batch fetches all products within a specific 1C group. Using optimized COM queries, this method minimizes DB requests and operates significantly faster than calling `get()` sequentially in a loop.
-- `get_by_category(c_categoryIn, s_attributeNameIn: str = "ВидНоменклатуры", s_catalogNameIn: str = "ВидыНоменклатуры") -> list`
-  Batch fetches all products within a specific 1C category (by default using the `ВидНоменклатуры` attribute in the `ВидыНоменклатуры` catalog). `c_categoryIn` can be a COM reference object or a string representing the category name.
+- `get_by_category(c_categoryIn) -> list`
+  Batch fetches all products within a specific 1C category. `c_categoryIn` can be a COM reference object or a string representing the category name (searched within `Справочник.КатегорииОбъектов`).
 
 ---
 
@@ -172,9 +193,9 @@ Defined in [groups.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/
 Defined in [categories.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/categories.py).
 
 - `get(s_codeIn: str = "", s_nameIn: str = "") -> Category | None`
-  Finds a single Category by its code or name in the `ВидыНоменклатуры` catalog.
+  Finds a single Category by its code or name in the `КатегорииОбъектов` (Object Categories) catalog.
 - `create(s_nameIn: str) -> Category | None`
-  Creates a new Category with the specified name in `Справочник.ВидыНоменклатуры` and returns it.
+  Creates a new Category with the specified name in `Справочник.КатегорииОбъектов` and returns it.
 
 ---
 
@@ -196,14 +217,14 @@ Defined in [orders.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/
 - `push(c_orderObjIn: Order) -> str`
   Creates a new `"Заказ покупателя"` (Buyer's Order) document in 1C.
   - Automatically queries the warehouse, counteragent, and organization based on codes specified in the `Connection` object.
-  - Sets the retail price type, document currency (Hryvnia, code `"980"`), and organization's primary bank account.
-  - Adds products from the order, queries the exact price for the specific characteristic selected, and computes totals.
+  - Sets the price type (defaulting to `"Розничная"` or using `s_price_type` from the order), document currency (Hryvnia, code `"980"`), and organization's primary bank account.
+  - Adds products from the order, queries/compares the exact price for the specific characteristic selected (using `s_price_type` to determine retail, wholesale, or purchase price), and computes totals.
   - Attempts to post the document (`Posting`). If posting fails, it writes the document in draft/save mode (`Write`).
   - Returns the number of the created document in 1C (or an empty string on error).
 - `get(s_codeIn: str) -> Order | None`
-  Retrieves a buyer's order by its 1C document number and parses it into an `Order` object. The comment field is parsed to retrieve the Telegram ID.
-- `get_today() -> list`
-  Returns a list of all today's orders created for the configured bot counteragent (filtered by current date and counteragent code).
+  Retrieves a buyer's order by its 1C document number and parses it into an `Order` object. The comment field is parsed to retrieve the Telegram ID, and the price type is retrieved.
+- `get_by_date(target_date: date | datetime, s_counteragent_code: str = "") -> list`
+  Returns a list of all posted orders (`Проведен = TRUE`) for a specific date (accepting `datetime.date` or `datetime.datetime`), optionally filtered by counteragent or counteragent group code.
 - `update_info(c_orderObjIn: Order) -> bool`
   Updates the comment field of the order in 1C. Writes a formatted string to the comment field:
   `"[Full Name] [Phone] [Telegram ID] [Waybill/TTN] [Status]"`
@@ -224,7 +245,34 @@ Defined in [customers.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionL
 
 ---
 
-### 9. Logging (`log.py`)
+### 9. Discounts Manager `DiscountsManager` (`Connection.discounts`)
+Defined in [discounts.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/discounts.py).
+
+- `get_active_groups(s_discount_type_codeIn: str = None) -> list`
+  Retrieves active discount groups and returns them as a list of `DiscountGroup` objects.
+  - If `s_discount_type_codeIn` is specified, only returns groups matching that discount type code.
+  - Queries active discounts from the `СкидкиНаценкиНоменклатуры` information register.
+  - Only retrieves discounts where the percentage is greater than zero and the registrar document's end date (`ДатаОкончания`) is either not set or is greater than or equal to the current date.
+
+---
+
+### 10. Properties Manager `PropertiesManager` (`Connection.properties`)
+Defined in [properties.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/properties.py).
+
+- `write(self, c_productIn, s_propertyNameOrCodeIn: str, s_propertyValueIn: str) -> bool`
+  Writes or updates a single property value for a product (Nomenclature item).
+- `write_batch(self, c_productIn, l_propertiesIn: list, b_forceIn: bool = False) -> list`
+  Writes/updates multiple properties for a product using a single 1C RecordSet. `l_propertiesIn` can be a list of `Property` objects or dicts `{"name": "...", "value": "..."}`.
+- `get_assigned_properties(self, c_productIn) -> list`
+  Returns a list of `Property` objects assigned to the specified product.
+- `delete(self, c_productIn, s_propertyNameOrCodeIn: str) -> bool`
+  Removes a specific property from a product in 1C register.
+- `get_all_definitions(self) -> list`
+  Retrieves definitions of all active properties in 1C.
+
+---
+
+### 11. Logging (`log.py`)
 Defined in [log.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/log.py).
 
 All actions are logged automatically. The library resolves the root directory of the project that imported it and stores log files in the relative path `log/system/[calling_module_name].log`.
@@ -248,7 +296,6 @@ c_conn = Connection(
 
 # 2. Configure 1C Default Codes
 c_conn.s_warehouse_code = "000000001"  # Warehouse code
-c_conn.s_counteragent_code = "000000045"  # Bot customer/counteragent code
 c_conn.s_organisation_code = "000000001"  # Organization code
 
 # 3. Establish connection to 1C
@@ -288,8 +335,8 @@ if c_conn.c_v8:
 
         items = [
             OrderItem(
-                s_productArticleIn="ART-1024",
-                s_productPropertieIn="Size: L, Color: Blue",
+                s_productCodeIn="000000104",
+                c_varietyIn=products[0].l_variety[0] if products and products[0].l_variety else None,
                 n_productCountIn=2
             )
         ]

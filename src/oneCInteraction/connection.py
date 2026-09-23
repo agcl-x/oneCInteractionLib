@@ -8,6 +8,8 @@ from .orders import OrdersManager
 from .characteristics import CharacteristicsManager
 from .categories import CategoriesManager
 from .customers import CustomersManager
+from .discounts import DiscountsManager
+from .properties import PropertiesManager
 
 
 class Connection:
@@ -28,7 +30,6 @@ class Connection:
         
         # Save codes to self for order creation
         self.s_warehouse_code = ""
-        self.s_counteragent_code = ""
         self.s_organisation_code = ""
         self.sl_price_types = ["Розничная", "Оптовая", "Закупочная"]
 
@@ -39,6 +40,8 @@ class Connection:
         self.characteristics = CharacteristicsManager(self)
         self.categories = CategoriesManager(self)
         self.customers = CustomersManager(self)
+        self.discounts = DiscountsManager(self)
+        self.properties = PropertiesManager(self)
 
     def initiate_connection(self) -> None:
         """Establishes COM connection to 1C and caches price type references."""

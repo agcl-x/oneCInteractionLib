@@ -4,11 +4,13 @@ from .structures import (
     Variety,
     Price,
     Characteristic,
+    Property,
     Group,
     Category,
     Customer,
     OrderItem,
-    Order
+    Order,
+    DiscountGroup
 )
 
 __all__ = [
@@ -17,9 +19,11 @@ __all__ = [
     'Variety',
     'Price',
     'Characteristic',
+    'Property',
     'Group',
     'Category',
     'Customer',
     'OrderItem',
-    'Order'
+    'Order',
+    'DiscountGroup'
 ]

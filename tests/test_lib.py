@@ -10,10 +10,16 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 try:
     from datetime import datetime
-    from oneCInteraction import Connection, Customer, Order, OrderItem, Nomenclature, Variety, Price, Characteristic, Group, Category
+    from oneCInteraction import Connection, Customer, Order, OrderItem, Nomenclature, Variety, Price, Characteristic, Property, Group, Category, DiscountGroup
     from oneCInteraction.log import log_sys, LOGS_DIR
     
     print("Success: Imported Connection and all structures successfully from oneCInteraction!")
+    
+    # Test Property structure
+    c_prop = Property("Колір", "Зелений")
+    assert c_prop.s_name == "Колір"
+    assert c_prop.s_value == "Зелений"
+    print("Success: Property instantiated.")
     
     # Test instantiation of structures
     c_cust = Customer(s_customerIdIn="123456789", s_customerNameIn="Ivan", s_customerSurnameIn="Ivanov", s_customerPhoneIn="+380991112233")
@@ -59,13 +65,15 @@ try:
     )
 
     # New Variety-based construction
-    c_item_variety_no_char = OrderItem(s_productArticleIn="ART001", c_varietyIn=c_var_no_char, n_productCountIn=1)
+    c_item_variety_no_char = OrderItem(s_productCodeIn="ART001", c_varietyIn=c_var_no_char, n_productCountIn=1)
     assert c_item_variety_no_char.c_variety == c_var_no_char
+    assert c_item_variety_no_char.s_productName == "", f"Expected default empty product name, got '{c_item_variety_no_char.s_productName}'"
     
-    c_item_variety_generic = OrderItem(s_productArticleIn="ART001", c_varietyIn=c_var_generic_char, n_productCountIn=2)
+    c_item_variety_generic = OrderItem(s_productCodeIn="ART001", c_varietyIn=c_var_generic_char, n_productCountIn=2, s_productNameIn="Двері вхідні")
     assert c_item_variety_generic.c_variety == c_var_generic_char
+    assert c_item_variety_generic.s_productName == "Двері вхідні", f"Expected 'Двері вхідні', got '{c_item_variety_generic.s_productName}'"
     
-    c_item_variety_named = OrderItem(s_productArticleIn="ART001", c_varietyIn=c_var_named_chars, n_productCountIn=5)
+    c_item_variety_named = OrderItem(s_productCodeIn="ART001", c_varietyIn=c_var_named_chars, n_productCountIn=5)
     assert c_item_variety_named.c_variety == c_var_named_chars
     print("Success: New Variety-based OrderItems instantiated and verified.")
     
@@ -80,11 +88,38 @@ try:
     
     c_var = c_var_no_char
     
-    c_nom = Nomenclature(s_nameIn="Product 1", s_articleIn="ART001", l_varietyIn=[c_var])
-    print("Success: Nomenclature instantiated.")
+    c_nom = Nomenclature(s_nameIn="Product 1", s_articleIn="ART001", l_varietyIn=[c_var], l_propertiesIn=[c_prop])
+    assert c_nom.dt_last_arrival is None
+    assert len(c_nom.l_properties) == 1
+    assert c_nom.l_properties[0].s_name == "Колір"
+    
+    dt_now = datetime.now()
+    c_nom_with_arrival = Nomenclature(
+        s_nameIn="Product 2",
+        s_articleIn="ART002",
+        l_varietyIn=[c_var],
+        dt_last_arrivalIn=dt_now
+    )
+    assert c_nom_with_arrival.dt_last_arrival == dt_now
+    print("Success: Nomenclature instantiated and verified with dt_last_arrival.")
     
     c_cat = Category(s_categoryNameIn="Shoes", l_nomenclaturesIn=[c_nom])
     print("Success: Category instantiated.")
+    
+    # Test DiscountGroup instantiation
+    c_dg = DiscountGroup(
+        s_nameIn="Гуртова акція",
+        s_document_numberIn="DOC001",
+        s_discount_type_codeIn="B2B",
+        n_discount_percentIn=10.0,
+        l_nomenclaturesIn=[{"code": "ART001", "name": "Product 1", "uuid": "uuid1", "char_name": None}]
+    )
+    assert c_dg.s_name == "Гуртова акція"
+    assert c_dg.s_document_number == "DOC001"
+    assert c_dg.s_discount_type_code == "B2B"
+    assert c_dg.n_discount_percent == 10.0
+    assert len(c_dg.l_nomenclatures) == 1
+    print("Success: DiscountGroup instantiated.")
     
     c_conn = Connection(s_oneCDatabasePathIn="test_db", s_usernameIn="admin", s_passwordIn="pass")
     print("Success: Connection class instantiated.")
@@ -95,7 +130,31 @@ try:
     assert c_conn.characteristics is not None
     assert c_conn.categories is not None
     assert c_conn.customers is not None
-    print("Success: Checked all composition managers exist.")
+    assert c_conn.discounts is not None
+    assert c_conn.properties is not None
+    print("Success: Checked all composition managers exist (including properties).")
+    
+    # Test OrdersManager when connection is not active
+    assert c_conn.orders.get_by_date(datetime.now()) == []
+    assert c_conn.orders.push(c_order) == ""
+    print("Success: OrdersManager.get_by_date and push tested with no active connection.")
+    
+    # Test PropertiesManager when connection is not active
+    assert c_conn.properties.get_assigned_properties("ART001") == []
+    assert c_conn.properties.write("ART001", "Колір", "Зелений") is False
+    assert c_conn.properties.write_batch("ART001", [{"name": "Колір", "value": "Зелений"}]) == []
+    assert c_conn.properties.delete("ART001", "Колір") is False
+    assert c_conn.properties.get_all_definitions() == []
+    print("Success: PropertiesManager tested with no active connection.")
+    
+    # Test DiscountsManager when connection is not active
+    discounts_res = c_conn.discounts.get_active_groups()
+    assert isinstance(discounts_res, list) and len(discounts_res) == 0, f"Expected empty list since connection is not active, got {discounts_res}"
+    
+    discounts_res_filtered = c_conn.discounts.get_active_groups("B2B")
+    assert isinstance(discounts_res_filtered, list) and len(discounts_res_filtered) == 0, f"Expected empty list since connection is not active, got {discounts_res_filtered}"
+    
+    print("Success: DiscountsManager.get_active_groups tested with no active connection (with and without s_discount_type_codeIn parameter).")
 
     # Test CustomersManager when connection is not active
     cust_res = c_conn.customers.get("CUST001")

@@ -68,12 +68,19 @@ class CharacteristicsManager:
     ):
         """Creates a Variety object with its characteristics and stock counts."""
         l_characteristics = self.get(c_charRefIn, s_charNameIn)
+        s_char_uuid = ""
+        try:
+            if c_charRefIn is not None and not c_charRefIn.IsEmpty():
+                s_char_uuid = self.c_v8.String(c_charRefIn.UUID())
+        except Exception:
+            pass
         return structures.Variety(
             c_priceRetailIn=c_priceRetailIn,
             c_priceOptIn=c_priceOptIn,
             d_countIn=d_stocksIn,
             l_characteristicsIn=l_characteristics,
-            c_pricePurchaseIn=c_pricePurchaseIn
+            c_pricePurchaseIn=c_pricePurchaseIn,
+            s_char_uuidIn=s_char_uuid
         )
 
     def fetch_batch(self, l_charRefsIn: list) -> dict:

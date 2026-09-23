@@ -1,4 +1,6 @@
 import os
+import glob
+import hashlib
 from datetime import datetime
 from .log import log_sys
 from . import structures
@@ -54,7 +56,8 @@ class NomenclatureManager:
                     Артикул AS Article, 
                     ISNULL(ДополнительноеОписаниеНоменклатуры, "") AS FullDescription,
                     ISNULL(НаименованиеПолное, "") AS FullName,
-                    ISNULL(ЕдиницаХраненияОстатков.Наименование, "шт.") AS Unit
+                    ISNULL(ЕдиницаХраненияОстатков.Наименование, "шт.") AS Unit,
+                    Родитель.Ссылка AS ParentRef
                 FROM Справочник.Номенклатура
                 WHERE ({" OR ".join(where_clauses)}) AND ЭтоГруппа = ЛОЖЬ AND ПометкаУдаления = ЛОЖЬ
             """
@@ -71,6 +74,8 @@ class NomenclatureManager:
             if not s_description:
                 s_description = self.c_v8.String(c_selection.FullName)
 
+            s_parent_uuid = self.c_v8.String(c_selection.ParentRef.UUID()) if not c_selection.ParentRef.IsEmpty() else ""
+
             log_sys(f"Nomenclature found: Name='{c_selection.Name}', Article='{c_selection.Article}'")
             return self._fetch_details(
                 c_selection.Ref, 
@@ -78,8 +83,9 @@ class NomenclatureManager:
                 c_selection.Article, 
                 s_description,
                 getattr(c_selection, "Unit", "шт."),
-                self.c_v8.String(c_selection.Ref.UUID()),
-                self.c_v8.String(c_selection.Code)
+                self.c_v8.String(c_selection.Ref.UUID()), 
+                self.c_v8.String(c_selection.Code),
+                s_parent_uuidIn=s_parent_uuid
             )
         except Exception as e:
             log_sys(f"Error in NomenclatureManager.get: {e}", 1)
@@ -162,6 +168,8 @@ class NomenclatureManager:
                 return []
 
             d_batchDetails = self._fetch_batch_details(l_productRefs)
+            d_batchArrivals = self._fetch_batch_last_arrivals(l_productRefs)
+            d_batchProperties = self._fetch_batch_properties(l_productRefs)
             
             l_allCharRefs = []
             for s_productUuid in d_batchDetails:
@@ -204,7 +212,8 @@ class NomenclatureManager:
                             n_value=d_data.get("purchase", 0.0),
                             dt_assigned=d_data.get("purchase_date"),
                             s_type="Закупочная"
-                        )
+                        ),
+                        s_char_uuidIn=s_charUuid if s_charUuid != "NULL" else ""
                     ))
 
                 if l_varieties:
@@ -216,7 +225,9 @@ class NomenclatureManager:
                         s_unitIn=d_item["unit"],
                         s_uuidIn=s_productUuid,
                         s_codeIn=self.c_v8.String(d_item["code"]),
-                        l_imagesIn=d_batchImages.get(s_productUuid, [])
+                        l_imagesIn=d_batchImages.get(s_productUuid, []),
+                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid),
+                        l_propertiesIn=d_batchProperties.get(s_productUuid, [])
                     ))
 
             log_sys(f"Successfully processed {len(l_nomenclatures)} items in search mode.")
@@ -224,6 +235,47 @@ class NomenclatureManager:
         except Exception as e:
             log_sys(f"Error in NomenclatureManager.search (batch): {e}", 1)
             return []
+
+    def _fetch_batch_properties(self, l_productRefsIn: list) -> dict:
+        """Batch fetches properties and values for a list of product references."""
+        if not self.c_v8 or not l_productRefsIn:
+            return {}
+
+        log_sys(f"Batch fetching properties for {len(l_productRefsIn)} products...")
+        
+        c_productRefsV8 = self.c_v8.NewObject("ValueList")
+        for c_ref in l_productRefsIn:
+            if c_ref and not c_ref.IsEmpty():
+                c_productRefsV8.Add(c_ref)
+
+        d_productProps = {} # {product_uuid: [Property]}
+
+        if c_productRefsV8.Count() > 0:
+            try:
+                c_propQuery = self.c_v8.NewObject("Query")
+                c_propQuery.Text = """
+                    SELECT
+                        Properties.Объект AS ProductRef,
+                        Properties.Свойство.Наименование AS PropName,
+                        Properties.Значение.Наименование AS ValName
+                    FROM
+                        РегистрСведений.ЗначенияСвойствОбъектов AS Properties
+                    WHERE
+                        Properties.Объект В (&ProductRefs)
+                """
+                c_propQuery.SetParameter("ProductRefs", c_productRefsV8)
+                c_propRes = c_propQuery.Execute()
+                if c_propRes is not None and not c_propRes.IsEmpty():
+                    c_sel = c_propRes.Select()
+                    while c_sel.Next():
+                        s_uuid = self.c_v8.String(c_sel.ProductRef.UUID())
+                        if s_uuid not in d_productProps:
+                            d_productProps[s_uuid] = []
+                        d_productProps[s_uuid].append(structures.Property(c_sel.PropName, c_sel.ValName))
+            except Exception as e:
+                log_sys(f"Error batch fetching properties: {e}", 1)
+
+        return d_productProps
 
     def _fetch_batch_details(self, l_productRefsIn: list) -> dict:
         """Batch fetches prices and stock quantities for a list of product references."""
@@ -284,7 +336,7 @@ class NomenclatureManager:
                 ON GeneralWholesalePrices.Номенклатура = MainTable.Ссылка
             LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура В (&ProductRefs) AND ТипЦен = &PurchasePriceType AND ХарактеристикаНоменклатуры = ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка)) AS GeneralPurchasePrices
                 ON GeneralPurchasePrices.Номенклатура = MainTable.Ссылка
-            LEFT JOIN РегистрНакопления.ТоварыНаСкладах.Остатки(&CurrentDate, Номенклатура В (&ProductRefs)) AS Stocks
+            LEFT JOIN РегистрНакопления.ТоварыНаСкладах.Остатки(, Номенклатура В (&ProductRefs)) AS Stocks
                 ON Stocks.Номенклатура = MainTable.Ссылка AND Stocks.ХарактеристикаНоменклатуры = ISNULL(Chars.Ссылка, ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка))
             WHERE
                 MainTable.Ссылка В (&ProductRefs)
@@ -347,8 +399,50 @@ class NomenclatureManager:
 
         return d_batchData
 
+    def _fetch_batch_last_arrivals(self, l_productRefsIn: list) -> dict:
+        """Batch fetches the last physical arrival date for a list of product references."""
+        if not self.c_v8 or not l_productRefsIn:
+            return {}
+
+        log_sys(f"Batch fetching last arrival dates for {len(l_productRefsIn)} items...")
+        
+        c_productRefsV8 = self.c_v8.NewObject("ValueList")
+        for c_ref in l_productRefsIn:
+            c_productRefsV8.Add(c_ref)
+
+        c_query = self.c_v8.NewObject("Query")
+        c_query.Text = """
+            SELECT
+                ТоварыНаСкладах.Номенклатура AS ProductRef,
+                MAX(ТоварыНаСкладах.Период) AS LastArrivalDate
+            FROM
+                РегистрНакопления.ТоварыНаСкладах AS ТоварыНаСкладах
+            WHERE
+                ТоварыНаСкладах.Номенклатура В (&ProductRefs)
+                AND ТоварыНаСкладах.ВидДвижения = ЗНАЧЕНИЕ(ВидДвиженияНакопления.Приход)
+                AND ТоварыНаСкладах.Регистратор ССЫЛКА Документ.ПоступлениеТоваровУслуг
+            GROUP BY
+                ТоварыНаСкладах.Номенклатура
+        """
+        c_query.SetParameter("ProductRefs", c_productRefsV8)
+
+        d_arrivals = {}
+        try:
+            c_result = c_query.Execute()
+            if c_result is not None and not c_result.IsEmpty():
+                c_sel = c_result.Select()
+                while c_sel.Next():
+                    s_productUuid = self.c_v8.String(c_sel.ProductRef.UUID())
+                    dt_last_arrival = _parse_1c_date(c_sel.LastArrivalDate)
+                    if dt_last_arrival:
+                        d_arrivals[s_productUuid] = dt_last_arrival
+        except Exception as e:
+            log_sys(f"Error in batch last arrivals query execution: {e}", 1)
+
+        return d_arrivals
+
     def _fetch_batch_image_metadata(self, l_productRefsIn: list) -> dict:
-        """Batch fetches image references (UUIDs) for a list of product references."""
+        """Batch fetches image references (UUIDs) and data version for change detection."""
         if not self.c_v8 or not l_productRefsIn:
             return {}
             
@@ -359,9 +453,10 @@ class NomenclatureManager:
             
         c_query = self.c_v8.NewObject("Query")
         c_query.Text = """
-            SELECT Объект AS ProductRef, Ссылка AS ImageRef
+            SELECT Объект AS ProductRef, Ссылка AS ImageRef, ХешФайла AS FileHash, ВерсияДанных AS DataVersion, ИмяФайла AS FileName
             FROM Справочник.ХранилищеДополнительнойИнформации
             WHERE Объект В (&ProductRefs) AND ПометкаУдаления = ЛОЖЬ
+            ORDER BY Наименование
         """
         c_query.SetParameter("ProductRefs", c_refsV8)
         
@@ -373,13 +468,40 @@ class NomenclatureManager:
                 while c_sel.Next():
                     s_productUuid = self.c_v8.String(c_sel.ProductRef.UUID())
                     s_imageUuid = self.c_v8.String(c_sel.ImageRef.UUID())
+                    
+                    s_version = ""
+                    try:
+                        # Спершу пробуємо ХешФайла
+                        s_version = self.c_v8.String(c_sel.FileHash)
+                    except Exception:
+                        pass
+                        
+                    # Якщо ХешФайла пустий, використовуємо ВерсияДанных як фолбек
+                    if not s_version:
+                        try:
+                            s_version = self.c_v8.XMLСтрока(c_sel.DataVersion)
+                        except Exception:
+                            try:
+                                s_version = self.c_v8.String(c_sel.DataVersion)
+                            except Exception:
+                                pass
+                                
+                    try:
+                        s_fname = self.c_v8.String(c_sel.FileName)
+                        if s_fname:
+                            s_version += f"_{s_fname}"
+                    except Exception:
+                        pass
                     if s_productUuid not in d_batchImages:
                         d_batchImages[s_productUuid] = []
-                    d_batchImages[s_productUuid].append(s_imageUuid)
+                    d_batchImages[s_productUuid].append({"uuid": s_imageUuid, "version": s_version})
         except Exception as e:
             log_sys(f"Error in batch image metadata: {e}", 1)
             
         return d_batchImages
+
+
+
 
     def _fetch_details(
         self,
@@ -389,7 +511,8 @@ class NomenclatureManager:
         s_descriptionIn: str,
         s_unitIn: str = "шт.",
         s_uuidIn: str = "",
-        s_codeIn: str = ""
+        s_codeIn: str = "",
+        s_parent_uuidIn: str = ""
     ):
         """Fetches details (prices, stock, characteristics) for a single Nomenclature."""
         c_retailPtRef = self.c_connection.get_price_type_ref("Розничная")
@@ -443,7 +566,7 @@ class NomenclatureManager:
                 ON ИСТИНА
             LEFT JOIN РегистрСведений.ЦеныНоменклатуры.СрезПоследних(&CurrentDate, Номенклатура = &ProductRef AND ТипЦен = &PurchasePriceType AND ХарактеристикаНоменклатуры = ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка)) AS GeneralPurchasePrices
                 ON ИСТИНА
-            LEFT JOIN РегистрНакопления.ТоварыНаСкладах.Остатки(&CurrentDate, Номенклатура = &ProductRef) AS Stocks
+            LEFT JOIN РегистрНакопления.ТоварыНаСкладах.Остатки(, Номенклатура = &ProductRef) AS Stocks
                 ON Stocks.ХарактеристикаНоменклатуры = ISNULL(Chars.Ссылка, ЗНАЧЕНИЕ(Справочник.ХарактеристикиНоменклатуры.ПустаяСсылка))
             WHERE
                 (Chars.Ссылка ЕСТЬ НЕ NULL)
@@ -527,6 +650,50 @@ class NomenclatureManager:
                 )
             ))
 
+        # Fetch last arrival date
+        dt_last_arrival = None
+        try:
+            c_arrivalQuery = self.c_v8.NewObject("Query")
+            c_arrivalQuery.Text = """
+                SELECT
+                    MAX(ТоварыНаСкладах.Период) AS LastArrivalDate
+                FROM
+                    РегистрНакопления.ТоварыНаСкладах AS ТоварыНаСкладах
+                WHERE
+                    ТоварыНаСкладах.Номенклатура = &ProductRef
+                    AND ТоварыНаСкладах.ВидДвижения = ЗНАЧЕНИЕ(ВидДвиженияНакопления.Приход)
+                    AND ТоварыНаСкладах.Регистратор ССЫЛКА Документ.ПоступлениеТоваровУслуг
+            """
+            c_arrivalQuery.SetParameter("ProductRef", c_productRefIn)
+            c_arrivalResult = c_arrivalQuery.Execute()
+            if c_arrivalResult is not None and not c_arrivalResult.IsEmpty():
+                c_arrivalSel = c_arrivalResult.Select()
+                if c_arrivalSel.Next():
+                    dt_last_arrival = _parse_1c_date(c_arrivalSel.LastArrivalDate)
+        except Exception as e:
+            log_sys(f"Error fetching last arrival date for {s_articleIn}: {e}", 1)
+        # Fetch product properties
+        l_properties = []
+        try:
+            c_propQuery = self.c_v8.NewObject("Query")
+            c_propQuery.Text = """
+                SELECT
+                    Properties.Свойство.Наименование AS PropName,
+                    Properties.Значение.Наименование AS ValName
+                FROM
+                    РегистрСведений.ЗначенияСвойствОбъектов AS Properties
+                WHERE
+                    Properties.Объект = &ProductRef
+            """
+            c_propQuery.SetParameter("ProductRef", c_productRefIn)
+            c_propRes = c_propQuery.Execute()
+            if c_propRes is not None and not c_propRes.IsEmpty():
+                c_sel = c_propRes.Select()
+                while c_sel.Next():
+                    l_properties.append(structures.Property(c_sel.PropName, c_sel.ValName))
+        except Exception as e:
+            log_sys(f"Error fetching properties for {s_articleIn}: {e}", 1)
+
         return structures.Nomenclature(
             s_nameIn=s_nameIn,
             s_articleIn=s_articleIn,
@@ -534,7 +701,10 @@ class NomenclatureManager:
             s_descriptionIn=s_descriptionIn,
             s_unitIn=s_unitIn,
             s_uuidIn=s_uuidIn,
-            s_codeIn=s_codeIn
+            s_codeIn=s_codeIn,
+            s_parent_uuidIn=s_parent_uuidIn,
+            dt_last_arrivalIn=dt_last_arrival,
+            l_propertiesIn=l_properties
         )
 
     def get_images(self, c_productObjIn, s_imageDirIn: str = None) -> list:
@@ -548,7 +718,7 @@ class NomenclatureManager:
         os.makedirs(s_imageDirIn, exist_ok=True)
 
         l_savedFilenames = []
-        l_imageUuids = getattr(c_productObjIn, 'l_images', [])
+        l_imageUuids = list(getattr(c_productObjIn, 'l_images', []))
 
         if not l_imageUuids:
             try:
@@ -558,31 +728,75 @@ class NomenclatureManager:
                 
                 c_query = self.c_v8.NewObject("Query")
                 c_query.Text = """
-                    SELECT Ссылка
+                    SELECT Ссылка, ХешФайла AS FileHash, ВерсияДанных AS DataVersion, ИмяФайла AS FileName
                     FROM Справочник.ХранилищеДополнительнойИнформации
                     WHERE Объект = &ProductRef AND ПометкаУдаления = ЛОЖЬ
+                    ORDER BY Наименование
                 """
                 c_query.SetParameter("ProductRef", c_productRef)
                 c_res = c_query.Execute()
                 if not c_res.IsEmpty():
                     c_sel = c_res.Select()
                     while c_sel.Next():
-                        l_imageUuids.append(self.c_v8.String(c_sel.Ссылка.UUID()))
+                        s_imgUuid = self.c_v8.String(c_sel.Ссылка.UUID())
+                        
+                        s_ver = ""
+                        try:
+                            s_ver = self.c_v8.String(c_sel.FileHash)
+                        except Exception:
+                            pass
+                            
+                        if not s_ver:
+                            try:
+                                s_ver = self.c_v8.XMLСтрока(c_sel.DataVersion)
+                            except Exception:
+                                try:
+                                    s_ver = self.c_v8.String(c_sel.DataVersion)
+                                except Exception:
+                                    pass
+                                    
+                        try:
+                            s_fname = self.c_v8.String(c_sel.FileName)
+                            if s_fname:
+                                s_ver += f"_{s_fname}"
+                        except Exception:
+                            pass
+                        l_imageUuids.append({"uuid": s_imgUuid, "version": s_ver})
             except Exception as e:
                 log_sys(f"Error fetching image references for {c_productObjIn.s_code}: {e}", 1)
 
+        s_cleanProductUuid = str(getattr(c_productObjIn, 's_uuid', '')).replace('{', '').replace('}', '').replace('-', '')
+        if not s_cleanProductUuid:
+            log_sys(f"Cannot save images: product '{getattr(c_productObjIn, 's_name', getattr(c_productObjIn, 's_code', '?'))}' has no UUID.", 1)
+            return []
 
-        for idx, s_rawUuid in enumerate(l_imageUuids):
-            s_cleanUuid = s_rawUuid.replace('{', '').replace('}', '').replace('-', '')
-            s_fileName = f"{s_cleanUuid}_{idx}.jpg"
+        for idx, img_info in enumerate(l_imageUuids):
+            if isinstance(img_info, dict):
+                s_rawUuid = img_info.get("uuid", "")
+                s_version = img_info.get("version", "")
+            elif isinstance(img_info, (list, tuple)):
+                s_rawUuid = img_info[0]
+                s_version = img_info[1] if len(img_info) > 1 else ""
+            else:
+                s_rawUuid = str(img_info)
+                s_version = ""
+
+            if s_version:
+                v_hash = hashlib.md5(s_version.encode('utf-8', errors='ignore')).hexdigest()[:8]
+                s_fileName = f"{s_cleanProductUuid}_{idx}_{v_hash}.jpg"
+            else:
+                s_fileName = f"{s_cleanProductUuid}_{idx}.jpg"
+                
             s_filePath = os.path.join(s_imageDirIn, s_fileName)
             
+            # Fast-path: file with this exact version already exists locally
             if os.path.exists(s_filePath):
                 l_savedFilenames.append(s_fileName)
                 continue
                 
+            # Slow-path: only download missing or modified files from 1C
             try:
-                log_sys(f"Image {s_fileName} missing locally. Downloading from 1C...")
+                log_sys(f"Downloading new/updated image {s_fileName} from 1C...")
                 c_imgUuidObj = self.c_v8.NewObject("UUID", s_rawUuid)
                 c_imgRef = self.c_v8.Catalogs.ХранилищеДополнительнойИнформации.GetRef(c_imgUuidObj)
                 
@@ -590,13 +804,27 @@ class NomenclatureManager:
                 c_binaryData = c_valueStorage.Get()
                 
                 if c_binaryData:
+                    # Remove older versions matching this exact slot
+                    for old_f in glob.glob(os.path.join(s_imageDirIn, f"{s_cleanProductUuid}_{idx}_*")):
+                        try:
+                            os.remove(old_f)
+                        except OSError:
+                            pass
+                    # Also try to remove the non-hashed legacy fallback if it exists
+                    legacy_f = os.path.join(s_imageDirIn, f"{s_cleanProductUuid}_{idx}.jpg")
+                    if os.path.exists(legacy_f):
+                        try:
+                            os.remove(legacy_f)
+                        except OSError:
+                            pass
+                            
                     c_binaryData.Write(s_filePath)
                     if os.path.exists(s_filePath):
                         l_savedFilenames.append(s_fileName)
                     else:
                         log_sys(f"Failed to write file to disk: {s_filePath}", 1)
                 else:
-                    log_sys(f"Record for {s_fileName} has empty storage.", 1)
+                    log_sys(f"Record for {s_cleanProductUuid}_{idx} has empty storage.", 1)
             except Exception as e:
                 log_sys(f"Error downloading image {s_fileName}: {e}", 1)
 
@@ -665,6 +893,8 @@ class NomenclatureManager:
 
 
             d_batchDetails = self._fetch_batch_details(l_productRefs)
+            d_batchArrivals = self._fetch_batch_last_arrivals(l_productRefs)
+            d_batchProperties = self._fetch_batch_properties(l_productRefs)
             
 
             l_allCharRefs = []
@@ -711,7 +941,8 @@ class NomenclatureManager:
                             n_value=d_data.get("purchase", 0.0),
                             dt_assigned=d_data.get("purchase_date"),
                             s_type="Закупочная"
-                        )
+                        ),
+                        s_char_uuidIn=s_charUuid if s_charUuid != "NULL" else ""
                     ))
 
                 if l_varieties:
@@ -721,8 +952,11 @@ class NomenclatureManager:
                         l_varietyIn=l_varieties,
                         s_descriptionIn=d_item["description"],
                         s_unitIn=d_item["unit"],
+                        s_uuidIn=s_productUuid,
                         s_codeIn=self.c_v8.String(d_item["code"]),
-                        l_imagesIn=d_batchImages.get(s_productUuid, [])
+                        l_imagesIn=d_batchImages.get(s_productUuid, []),
+                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid),
+                        l_propertiesIn=d_batchProperties.get(s_productUuid, [])
                     ))
 
             log_sys(f"Successfully processed {len(l_nomenclatures)} items in batch mode.")
@@ -818,6 +1052,8 @@ class NomenclatureManager:
 
 
             d_batchDetails = self._fetch_batch_details(l_productRefs)
+            d_batchArrivals = self._fetch_batch_last_arrivals(l_productRefs)
+            d_batchProperties = self._fetch_batch_properties(l_productRefs)
             
 
             l_allCharRefs = []
@@ -864,7 +1100,8 @@ class NomenclatureManager:
                             n_value=d_data.get("purchase", 0.0),
                             dt_assigned=d_data.get("purchase_date"),
                             s_type="Закупочная"
-                        )
+                        ),
+                        s_char_uuidIn=s_charUuid if s_charUuid != "NULL" else ""
                     ))
 
                 if l_varieties:
@@ -874,8 +1111,11 @@ class NomenclatureManager:
                         l_varietyIn=l_varieties,
                         s_descriptionIn=d_item["description"],
                         s_unitIn=d_item["unit"],
+                        s_uuidIn=s_productUuid,
                         s_codeIn=self.c_v8.String(d_item["code"]),
-                        l_imagesIn=d_batchImages.get(s_productUuid, [])
+                        l_imagesIn=d_batchImages.get(s_productUuid, []),
+                        dt_last_arrivalIn=d_batchArrivals.get(s_productUuid),
+                        l_propertiesIn=d_batchProperties.get(s_productUuid, [])
                     ))
 
             log_sys(f"Successfully processed {len(l_nomenclatures)} items in batch mode.")
