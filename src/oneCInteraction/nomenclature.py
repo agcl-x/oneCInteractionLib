@@ -212,7 +212,8 @@ class NomenclatureManager:
                             n_value=d_data.get("purchase", 0.0),
                             dt_assigned=d_data.get("purchase_date"),
                             s_type="Закупочная"
-                        )
+                        ),
+                        s_char_uuidIn=s_charUuid if s_charUuid != "NULL" else ""
                     ))
 
                 if l_varieties:
@@ -940,7 +941,8 @@ class NomenclatureManager:
                             n_value=d_data.get("purchase", 0.0),
                             dt_assigned=d_data.get("purchase_date"),
                             s_type="Закупочная"
-                        )
+                        ),
+                        s_char_uuidIn=s_charUuid if s_charUuid != "NULL" else ""
                     ))
 
                 if l_varieties:
@@ -1098,7 +1100,8 @@ class NomenclatureManager:
                             n_value=d_data.get("purchase", 0.0),
                             dt_assigned=d_data.get("purchase_date"),
                             s_type="Закупочная"
-                        )
+                        ),
+                        s_char_uuidIn=s_charUuid if s_charUuid != "NULL" else ""
                     ))
 
                 if l_varieties:

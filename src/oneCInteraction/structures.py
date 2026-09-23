@@ -44,13 +44,15 @@ class Variety:
         c_priceOptIn: Price,
         d_countIn: dict,
         l_characteristicsIn: list,
-        c_pricePurchaseIn: Price = None
+        c_pricePurchaseIn: Price = None,
+        s_char_uuidIn: str = ""
     ):
         self.c_priceRetail = c_priceRetailIn
         self.c_priceOpt = c_priceOptIn
         self.c_pricePurchase = c_pricePurchaseIn if c_pricePurchaseIn is not None else Price(0.0, s_type="Закупочная")
         self.d_count = d_countIn
         self.l_characteristics = l_characteristicsIn
+        self.s_char_uuid = s_char_uuidIn
 
 class Characteristic:
     def __init__(self, s_nameIn: str, s_valueIn: str):

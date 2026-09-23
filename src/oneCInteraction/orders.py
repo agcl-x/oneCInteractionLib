@@ -154,14 +154,45 @@ class OrdersManager:
 
                 log_sys("Nomenclature successfully fetched")
                 
-                # Extract characteristic description from variety if present
-                s_itemProp = ""
+                # Extract characteristic and resolve reference
+                s_char_uuid = getattr(c_item.c_variety, "s_char_uuid", "") if getattr(c_item, "c_variety", None) is not None else ""
+                c_charRef = None
+
+                full_parts = []
+                val_parts = []
                 if getattr(c_item, "c_variety", None) is not None:
-                    parts = [char.s_value for char in c_item.c_variety.l_characteristics if char.s_value]
-                    s_itemProp = ", ".join(parts)
-                    
-                log_sys(f"Trying to get nomenclature characteristic({s_itemProp})")
-                c_charRef = self._resolve_characteristic(c_nomRef, s_itemProp)
+                    for char in c_item.c_variety.l_characteristics:
+                        if char.s_value:
+                            val_parts.append(char.s_value)
+                            if char.s_name:
+                                full_parts.append(f"{char.s_name}: {char.s_value}")
+                            else:
+                                full_parts.append(char.s_value)
+
+                s_itemProp = ", ".join(full_parts) if full_parts else ", ".join(val_parts)
+                s_itemProp_vals = ", ".join(val_parts)
+
+                # 1. First priority: Resolve characteristic by UUID
+                if s_char_uuid:
+                    try:
+                        log_sys(f"Resolving characteristic by UUID: {s_char_uuid}")
+                        c_uid = self.c_v8.NewObject("УникальныйИдентификатор", s_char_uuid)
+                        c_ref = self.c_v8.Catalogs.ХарактеристикиНоменклатуры.GetRef(c_uid)
+                        if c_ref is not None and not c_ref.IsEmpty() and c_ref.GetObject() is not None:
+                            c_charRef = c_ref
+                            log_sys(f"Characteristic successfully resolved by UUID: {s_char_uuid}")
+                        else:
+                            log_sys(f"Characteristic with UUID '{s_char_uuid}' not found or empty object in 1C.", 1)
+                    except Exception as e:
+                        log_sys(f"UUID characteristic lookup failed ({s_char_uuid}): {e}. Falling back to text search.", 1)
+
+                # 2. Second priority: Fallback to text search
+                if c_charRef is None or c_charRef.IsEmpty():
+                    log_sys(f"Trying to get nomenclature characteristic by text ({s_itemProp})")
+                    c_charRef = self._resolve_characteristic(c_nomRef, s_itemProp)
+                    if c_charRef.IsEmpty() and s_itemProp_vals and s_itemProp_vals != s_itemProp:
+                        log_sys(f"Trying fallback characteristic search by values only ({s_itemProp_vals})")
+                        c_charRef = self._resolve_characteristic(c_nomRef, s_itemProp_vals)
                 
                 # Fetch price
                 log_sys("Trying to get nomenclature price...")
@@ -198,17 +229,30 @@ class OrdersManager:
                         if c_tempNom and c_tempNom.l_variety:
                             c_foundVariety = None
                             for c_variety in c_tempNom.l_variety:
+                                # 2.1 Match by char UUID if available
+                                if s_char_uuid and getattr(c_variety, "s_char_uuid", "") == s_char_uuid:
+                                    c_foundVariety = c_variety
+                                    break
+
                                 if not s_itemProp:
                                     c_foundVariety = c_variety
                                     break
                                 
                                 v_vals = [c.s_value for c in c_variety.l_characteristics if c.s_value]
-                                if s_itemProp in v_vals or s_itemProp == ", ".join(v_vals):
+                                v_full = [f"{c.s_name}: {c.s_value}" for c in c_variety.l_characteristics if c.s_value]
+                                if (s_itemProp in v_vals
+                                    or s_itemProp == ", ".join(v_vals)
+                                    or s_itemProp == ", ".join(v_full)
+                                    or (s_itemProp_vals and (s_itemProp_vals == ", ".join(v_vals) or s_itemProp_vals in v_vals))):
                                     c_foundVariety = c_variety
                                     break
 
                                 for c_char in c_variety.l_characteristics:
-                                    if c_char.s_value.strip().lower() == s_itemProp.strip().lower() or f"{c_char.s_name}: {c_char.s_value}".strip().lower() == s_itemProp.strip().lower():
+                                    c_full_val = f"{c_char.s_name}: {c_char.s_value}".strip().lower()
+                                    c_val_only = c_char.s_value.strip().lower()
+                                    if (c_val_only == s_itemProp.strip().lower() 
+                                        or c_full_val == s_itemProp.strip().lower()
+                                        or (s_itemProp_vals and c_val_only == s_itemProp_vals.strip().lower())):
                                         c_foundVariety = c_variety
                                         break
                                 if c_foundVariety:
@@ -232,10 +276,14 @@ class OrdersManager:
                             log_sys(f"Could not fetch 1C price for {c_item.s_productCode} or price is 0. Using variety price ({n_passedPrice}).")
                             n_actualPrice = n_passedPrice
                     else:
-                        n_actualPrice = n_1cPrice
+                        n_actualPrice = n_1cPrice if n_1cPrice > 0.0 else n_passedPrice
+
+                    # Final fallback: if n_actualPrice is still 0.0 but n_passedPrice > 0.0
+                    if n_actualPrice == 0.0 and n_passedPrice > 0.0:
+                        n_actualPrice = n_passedPrice
                 except Exception as e:
-                    log_sys(f"Cannot get nomenclature price: {e}. Setting price to 0", 1)
-                    n_actualPrice = 0.0
+                    log_sys(f"Cannot get nomenclature price: {e}. Setting price to passedPrice or 0", 1)
+                    n_actualPrice = n_passedPrice if 'n_passedPrice' in locals() and n_passedPrice > 0.0 else 0.0
 
                 log_sys("Creating new orderItem table row. Trying to add new nomenclature...")
                 try:
@@ -357,11 +405,18 @@ class OrdersManager:
                     l_chars = self.c_connection.characteristics.get(c_charRef, s_charName)
                 
                 # Always create Variety to preserve row price
+                s_c_uuid = ""
+                if not c_charRef.IsEmpty():
+                    try:
+                        s_c_uuid = self.c_v8.String(c_charRef.UUID())
+                    except Exception:
+                        pass
                 c_variety = structures.Variety(
                     c_priceRetailIn=structures.Price(c_row.Цена, s_type="Розничная"),
                     c_priceOptIn=structures.Price(0.0, s_type="Оптовая"),
                     d_countIn={},
-                    l_characteristicsIn=l_chars
+                    l_characteristicsIn=l_chars,
+                    s_char_uuidIn=s_c_uuid
                 )
 
                 c_item = structures.OrderItem(
