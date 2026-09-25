@@ -1,7 +1,7 @@
 import os
 import glob
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from .log import log_sys
 from . import structures
 
@@ -349,7 +349,7 @@ class NomenclatureManager:
         c_retailPtRef = self.c_connection.get_price_type_ref("Розничная")
         c_wholesalePtRef = self.c_connection.get_price_type_ref("Оптовая")
         c_purchasePtRef = self.c_connection.get_price_type_ref("Закупочная")
-        c_currDate = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
+        c_currDate = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=timezone.utc)
 
         c_charQuery.SetParameter("ProductRefs", c_productRefsV8)
         c_charQuery.SetParameter("RetailPriceType", c_retailPtRef)
@@ -518,7 +518,7 @@ class NomenclatureManager:
         c_retailPtRef = self.c_connection.get_price_type_ref("Розничная")
         c_wholesalePtRef = self.c_connection.get_price_type_ref("Оптовая")
         c_purchasePtRef = self.c_connection.get_price_type_ref("Закупочная")
-        c_currDate = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
+        c_currDate = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=timezone.utc)
 
         c_charQuery = self.c_v8.NewObject("Query")
         c_charQuery.Text = """

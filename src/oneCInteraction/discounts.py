@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from .log import log_sys
 from . import structures
 
@@ -48,7 +48,7 @@ class DiscountsManager:
                 
             query.Text = query_text
             
-            c_currDate = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
+            c_currDate = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=timezone.utc)
             query.SetParameter("CurrentDate", c_currDate)
             if s_discount_type_codeIn is not None:
                 query.SetParameter("DiscountTypeCode", s_discount_type_codeIn)

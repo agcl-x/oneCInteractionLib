@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from .log import log_sys
 from . import structures
 
@@ -41,16 +41,24 @@ class OrdersManager:
                 if getattr(c_orderObjIn, "dt_date", None) is not None:
                     order_date = c_orderObjIn.dt_date
                     if order_date.tzinfo is not None:
-                        order_date = order_date.astimezone(self.c_connection.tz_kiev).replace(tzinfo=None)
-                    c_newOrder.Дата = order_date
-                    log_sys(f"Date from order object successfully added: {order_date}")
+                        local_dt = order_date.astimezone(self.c_connection.tz_kiev)
+                    else:
+                        local_dt = self.c_connection.tz_kiev.localize(order_date)
+                    log_sys(f"Date from order object resolved to Kyiv time: {local_dt}")
                 else:
-                    c_newOrder.Дата = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
-                    log_sys("Current date/time successfully added")
+                    local_dt = datetime.now(self.c_connection.tz_kiev)
+                    log_sys(f"Current Kyiv date/time resolved: {local_dt}")
+
+                # Note: VT_DATE in COM is treated by pywin32 as UTC. If a naive datetime is passed,
+                # pywin32 converts it from local time to UTC by subtracting the timezone offset (-3h in summer).
+                # Since 1C expects the raw wall-clock time without timezone adjustments, we explicitly set
+                # tzinfo=timezone.utc so pywin32 passes the local wall-clock numbers directly to 1C.
+                c_newOrder.Дата = local_dt.replace(tzinfo=timezone.utc)
+                log_sys(f"Date successfully added: {local_dt.strftime('%d.%m.%Y %H:%M:%S')}")
             except Exception as e:
                 log_sys(f"Failed to set date ({e}), trying fallback", 1)
                 try:
-                    c_newOrder.Дата = datetime.now()
+                    c_newOrder.Дата = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=timezone.utc)
                 except Exception:
                     pass
 
@@ -362,7 +370,7 @@ class OrdersManager:
             log_sys(f"Searching for order with number: {s_codeIn}...")
             c_orderRef = self.c_v8.Documents.ЗаказПокупателя.FindByNumber(
                 s_codeIn, 
-                datetime.now(self.c_connection.tz_kiev).replace(tzinfo=None)
+                datetime.now(self.c_connection.tz_kiev).replace(tzinfo=timezone.utc)
             )
 
             if c_orderRef.IsEmpty():
@@ -371,6 +379,14 @@ class OrdersManager:
 
             log_sys("Order found. Extracting data...")
             c_orderObj1c = c_orderRef.GetObject()
+
+            dt_order_date = None
+            try:
+                raw_dt = c_orderObj1c.Дата
+                if raw_dt:
+                    dt_order_date = datetime(raw_dt.year, raw_dt.month, raw_dt.day, raw_dt.hour, raw_dt.minute, raw_dt.second)
+            except Exception as e:
+                log_sys(f"Failed to parse order date: {e}", 1)
 
             s_comment = ""
             try:
@@ -432,7 +448,8 @@ class OrdersManager:
                 l_orderItemsListIn=l_orderItemsList,
                 n_orderCodeIn=s_codeIn,
                 s_price_typeIn=s_price_type,
-                s_commentIn=s_comment
+                s_commentIn=s_comment,
+                dt_dateIn=dt_order_date
             )
 
             log_sys(f"Order {s_codeIn} successfully fetched and parsed.")
@@ -462,10 +479,12 @@ class OrdersManager:
                 return []
 
             if dt_obj.tzinfo is not None:
-                dt_obj = dt_obj.astimezone(self.c_connection.tz_kiev).replace(tzinfo=None)
+                dt_obj = dt_obj.astimezone(self.c_connection.tz_kiev)
+            else:
+                dt_obj = self.c_connection.tz_kiev.localize(dt_obj)
 
-            c_startDate = dt_obj.replace(hour=0, minute=0, second=0, microsecond=0)
-            c_endDate = dt_obj.replace(hour=23, minute=59, second=59, microsecond=0)
+            c_startDate = dt_obj.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+            c_endDate = dt_obj.replace(hour=23, minute=59, second=59, microsecond=0, tzinfo=timezone.utc)
 
             c_query = self.c_v8.NewObject("Query")
             
