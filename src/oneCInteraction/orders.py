@@ -218,11 +218,18 @@ class OrdersManager:
                                 return price_obj.n_value
                         # Fallback mappings based on standard names
                         if s_price_type_name == "Оптовая":
-                            return variety.c_priceOpt.n_value
+                            n_val = variety.c_priceOpt.n_value
                         elif s_price_type_name == "Закупочная":
-                            return variety.c_pricePurchase.n_value
+                            n_val = variety.c_pricePurchase.n_value
                         else:
-                            return variety.c_priceRetail.n_value
+                            n_val = variety.c_priceRetail.n_value
+                        # Last-resort: if named type is 0, return first non-zero price
+                        if n_val == 0.0:
+                            for price_attr in ["c_priceRetail", "c_priceOpt", "c_pricePurchase"]:
+                                price_obj = getattr(variety, price_attr, None)
+                                if price_obj and price_obj.n_value > 0.0:
+                                    return price_obj.n_value
+                        return n_val
 
                     # 1. Price from variety passed in c_item
                     n_passedPrice = 0.0
@@ -266,10 +273,15 @@ class OrdersManager:
                                 if c_foundVariety:
                                     break
                             
-                            if not c_foundVariety:
-                                c_foundVariety = c_tempNom.l_variety[0]
-                                
-                            n_1cPrice = get_variety_price(c_foundVariety)
+                            if c_foundVariety:
+                                n_1cPrice = get_variety_price(c_foundVariety)
+                            else:
+                                log_sys(
+                                    f"Variety not matched for {c_item.s_productCode} "
+                                    f"(uuid='{s_char_uuid}', prop='{s_itemProp}'). "
+                                    f"n_1cPrice stays 0 -> will use B2B fallback.",
+                                    1
+                                )
                     except Exception as e:
                         log_sys(f"Failed to fetch actual 1C price for comparison: {e}", 1)
 
