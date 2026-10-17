@@ -142,7 +142,8 @@ class Order:
         n_orderCodeIn: int = 0,
         s_price_typeIn: str = "",
         s_commentIn: str = "",
-        dt_dateIn: datetime = None
+        dt_dateIn: datetime = None,
+        s_uuidIn: str = ""
     ):
         self.c_orderCustomer = c_orderCustomerIn
         self.l_orderItemsList = l_orderItemsListIn if l_orderItemsListIn is not None else []
@@ -153,6 +154,7 @@ class Order:
         self.n_orderCode = n_orderCodeIn
         self.s_price_type = s_price_typeIn
         self.s_comment = s_commentIn
+        self.s_uuid = s_uuidIn
 
 
 class DiscountGroup:

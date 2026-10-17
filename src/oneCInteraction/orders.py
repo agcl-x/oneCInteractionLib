@@ -211,10 +211,10 @@ class OrdersManager:
                         s_price_type_name = "Розничная"
 
                     def get_variety_price(variety):
-                        # Try to match by s_type of the Price object
+                        # Try to match by s_type of the Price object only if it has a non-zero value
                         for price_attr in ["c_priceRetail", "c_priceOpt", "c_pricePurchase"]:
                             price_obj = getattr(variety, price_attr, None)
-                            if price_obj and price_obj.s_type == s_price_type_name:
+                            if price_obj and price_obj.s_type == s_price_type_name and price_obj.n_value > 0.0:
                                 return price_obj.n_value
                         # Fallback mappings based on standard names
                         if s_price_type_name == "Оптовая":
@@ -243,6 +243,10 @@ class OrdersManager:
                         c_tempNom = self.c_connection.nomenclature.get(s_codeIn=c_item.s_productCode)
                         if c_tempNom and c_tempNom.l_variety:
                             c_foundVariety = None
+                            # Sets of tokens/values for flexible order-independent matching
+                            s_itemProp_vals_set = {v.strip().lower() for v in s_itemProp_vals.split(", ") if v.strip()} if s_itemProp_vals else set()
+                            s_itemProp_full_set = {v.strip().lower() for v in s_itemProp.split(", ") if v.strip()} if s_itemProp else set()
+
                             for c_variety in c_tempNom.l_variety:
                                 # 2.1 Match by char UUID if available
                                 if s_char_uuid and getattr(c_variety, "s_char_uuid", "") == s_char_uuid:
@@ -255,10 +259,17 @@ class OrdersManager:
                                 
                                 v_vals = [c.s_value for c in c_variety.l_characteristics if c.s_value]
                                 v_full = [f"{c.s_name}: {c.s_value}" for c in c_variety.l_characteristics if c.s_value]
+                                v_vals_set = {v.strip().lower() for v in v_vals if v.strip()}
+                                v_full_set = {v.strip().lower() for v in v_full if v.strip()}
+
                                 if (s_itemProp in v_vals
                                     or s_itemProp == ", ".join(v_vals)
                                     or s_itemProp == ", ".join(v_full)
-                                    or (s_itemProp_vals and (s_itemProp_vals == ", ".join(v_vals) or s_itemProp_vals in v_vals))):
+                                    or (s_itemProp_vals and (s_itemProp_vals == ", ".join(v_vals) or s_itemProp_vals in v_vals))
+                                    or (s_itemProp_vals_set and s_itemProp_vals_set == v_vals_set)
+                                    or (s_itemProp_full_set and s_itemProp_full_set == v_full_set)
+                                    or (s_itemProp_vals_set and v_vals_set and s_itemProp_vals_set.issubset(v_vals_set))
+                                    or (s_itemProp_vals_set and v_vals_set and v_vals_set.issubset(s_itemProp_vals_set))):
                                     c_foundVariety = c_variety
                                     break
 
@@ -352,6 +363,10 @@ class OrdersManager:
                 c_newOrder.Write(self.c_v8.DocumentWriteMode.Posting)
                 log_sys(f"Order was successfully posted. Code: {c_newOrder.Номер}")
                 c_orderObjIn.n_orderCode = c_newOrder.Номер
+                try:
+                    c_orderObjIn.s_uuid = str(self.c_v8.String(c_newOrder.Ref.UUID())).lower()
+                except Exception as ue:
+                    log_sys(f"Could not extract order UUID: {ue}", 1)
                 return c_newOrder.Номер
             except Exception as e:
                 try:
@@ -359,6 +374,10 @@ class OrdersManager:
                     c_newOrder.Write(self.c_v8.DocumentWriteMode.Write)
                     log_sys(f"Order was successfully saved. Returning code: {c_newOrder.Номер}")
                     c_orderObjIn.n_orderCode = c_newOrder.Номер
+                    try:
+                        c_orderObjIn.s_uuid = str(self.c_v8.String(c_newOrder.Ref.UUID())).lower()
+                    except Exception as ue:
+                        log_sys(f"Could not extract order UUID: {ue}", 1)
                     return c_newOrder.Номер
                 except Exception as e2:
                     log_sys(f"Failed saving order: {e2}")
@@ -368,29 +387,22 @@ class OrdersManager:
             log_sys(f"Unexpected error in posting order: {e}. Returning \"\"", 1)
             return ""
 
-    def get(self, s_codeIn: str):
-        """Retrieves and parses a customer order by its 1C document number."""
-        if not self.c_v8:
-            log_sys("Failed to get order: No connection to 1C. Returning None", 1)
-            return None
-
-        if len(s_codeIn) < 2:
-            log_sys(f"Failed to get order: Wrong code format ({s_codeIn}). Returning None", 1)
+    def _parse_order_ref(self, c_orderRef):
+        """Helper to parse a 1C ЗаказПокупателя reference or object into structures.Order."""
+        if not c_orderRef or c_orderRef.IsEmpty():
             return None
 
         try:
-            log_sys(f"Searching for order with number: {s_codeIn}...")
-            c_orderRef = self.c_v8.Documents.ЗаказПокупателя.FindByNumber(
-                s_codeIn, 
-                datetime.now(self.c_connection.tz_kiev).replace(tzinfo=timezone.utc)
-            )
-
-            if c_orderRef.IsEmpty():
-                log_sys(f"Order with number {s_codeIn} not found in 1C.", 1)
+            c_orderObj1c = c_orderRef.GetObject()
+            if not c_orderObj1c:
                 return None
 
-            log_sys("Order found. Extracting data...")
-            c_orderObj1c = c_orderRef.GetObject()
+            s_code = str(c_orderObj1c.Номер)
+            s_uuid = ""
+            try:
+                s_uuid = str(self.c_v8.String(c_orderRef.UUID())).lower()
+            except Exception as ue:
+                log_sys(f"Failed to get UUID for order {s_code}: {ue}", 1)
 
             dt_order_date = None
             try:
@@ -458,13 +470,90 @@ class OrdersManager:
             c_resultOrder = structures.Order(
                 c_orderCustomerIn=c_customer,
                 l_orderItemsListIn=l_orderItemsList,
-                n_orderCodeIn=s_codeIn,
+                n_orderCodeIn=s_code,
                 s_price_typeIn=s_price_type,
                 s_commentIn=s_comment,
-                dt_dateIn=dt_order_date
+                dt_dateIn=dt_order_date,
+                s_uuidIn=s_uuid
             )
 
-            log_sys(f"Order {s_codeIn} successfully fetched and parsed.")
+            # Store extra flags for status checking
+            c_resultOrder.b_is_deleted = bool(c_orderObj1c.ПометкаУдаления)
+            c_resultOrder.b_is_posted = bool(c_orderObj1c.Проведен)
+
+            return c_resultOrder
+        except Exception as e:
+            log_sys(f"Error parsing 1C order ref: {e}", 1)
+            return None
+
+    def get_by_uuid(self, s_uuidIn: str):
+        """Retrieves and parses a customer order by its 1C UUID."""
+        if not self.c_v8:
+            log_sys("Failed to get order by UUID: No connection to 1C.", 1)
+            return None
+
+        clean_uuid = str(s_uuidIn).strip()
+        if not clean_uuid:
+            return None
+
+        try:
+            log_sys(f"Searching for order with UUID: {clean_uuid}...")
+            v8_uuid = self.c_v8.NewObject("UUID", clean_uuid)
+            c_orderRef = self.c_v8.Documents.ЗаказПокупателя.GetRef(v8_uuid)
+
+            if c_orderRef.IsEmpty():
+                log_sys(f"Order with UUID {clean_uuid} not found in 1C.", 1)
+                return None
+
+            c_resultOrder = self._parse_order_ref(c_orderRef)
+            if c_resultOrder:
+                log_sys(f"Order with UUID {clean_uuid} successfully fetched (number: {c_resultOrder.n_orderCode}).")
+            return c_resultOrder
+        except Exception as e:
+            log_sys(f"Error occurred while retrieving order by UUID {clean_uuid}: {e}", 1)
+            return None
+
+    def get(self, s_codeIn: str):
+        """Retrieves and parses the most recent customer order by its 1C document number."""
+        if not self.c_v8:
+            log_sys("Failed to get order: No connection to 1C. Returning None", 1)
+            return None
+
+        if len(s_codeIn) < 2:
+            log_sys(f"Failed to get order: Wrong code format ({s_codeIn}). Returning None", 1)
+            return None
+
+        try:
+            log_sys(f"Searching for order with number: {s_codeIn}...")
+            # Use query to get the most recent order if duplicate numbers exist across periods
+            query = self.c_v8.NewObject("Query")
+            query.Text = """
+                SELECT TOP 1 Ссылка AS Ref
+                FROM Документ.ЗаказПокупателя
+                WHERE Номер = &OrderNumber
+                ORDER BY Дата DESC
+            """
+            query.SetParameter("OrderNumber", s_codeIn)
+            result = query.Execute()
+
+            if result.IsEmpty():
+                # Fallback to FindByNumber
+                c_orderRef = self.c_v8.Documents.ЗаказПокупателя.FindByNumber(
+                    s_codeIn, 
+                    datetime.now(self.c_connection.tz_kiev).replace(tzinfo=timezone.utc)
+                )
+            else:
+                sel = result.Select()
+                sel.Next()
+                c_orderRef = sel.Ref
+
+            if not c_orderRef or c_orderRef.IsEmpty():
+                log_sys(f"Order with number {s_codeIn} not found in 1C.", 1)
+                return None
+
+            c_resultOrder = self._parse_order_ref(c_orderRef)
+            if c_resultOrder:
+                log_sys(f"Order {s_codeIn} successfully fetched and parsed (UUID: {c_resultOrder.s_uuid}).")
             return c_resultOrder
 
         except Exception as e:
@@ -620,7 +709,15 @@ class OrdersManager:
                         log_sys(f"Characteristic found via case-insensitive query match: '{name}'")
                         return ref
 
-                # 1.3 Substring / prefix match (e.g. 'Multicam' in 'Колір: Multicam' or vice-versa)
+                # 1.3 Set-based matching (independent of token ordering, e.g. "Білий / блакитний, 38" vs "38, Білий / блакитний")
+                prop_tokens = {t.strip().lower() for t in s_cleanProp.replace(";", ",").split(",") if t.strip()}
+                for ref, name in candidates:
+                    name_tokens = {t.strip().lower() for t in name.replace(";", ",").split(",") if t.strip()}
+                    if prop_tokens and name_tokens and (prop_tokens == name_tokens or prop_tokens.issubset(name_tokens) or name_tokens.issubset(prop_tokens)):
+                        log_sys(f"Characteristic found via set-token query match: '{name}' matches '{s_cleanProp}'")
+                        return ref
+
+                # 1.4 Substring / prefix match (e.g. 'Multicam' in 'Колір: Multicam' or vice-versa)
                 for ref, name in candidates:
                     if name and (name.lower() in s_cleanProp.lower() or s_cleanProp.lower() in name.lower()):
                         log_sys(f"Characteristic found via substring query match: '{name}' matches '{s_cleanProp}'")

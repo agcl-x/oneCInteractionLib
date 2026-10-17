@@ -15,6 +15,69 @@ def _parse_1c_date(dt_val) -> datetime | None:
     except Exception:
         return None
 
+def _parse_image_num(name: str) -> int | None:
+    """
+    Parses image name as an integer strictly in the range 1..50.
+    Ignores common image extensions (e.g. '.jpg', '.webp') and whitespace.
+    Returns integer if valid, else None.
+    """
+    if not name or not isinstance(name, str):
+        return None
+    cleaned = name.strip()
+    base, _ = os.path.splitext(cleaned)
+    base = base.strip()
+    if base.isdigit():
+        val = int(base)
+        if 1 <= val <= 50:
+            return val
+    return None
+
+def sort_product_images(l_images: list) -> list:
+    """
+    Sorts product images according to business rules:
+    1. Primary image in 1C (is_main=True) ALWAYS appears first.
+    2. If all images in the product have numeric names in range 1..50,
+       remaining images are sorted numerically by their number (1, 2, ..., 50).
+    3. If any image has letters or a name outside 1..50,
+       remaining images are sorted chronologically by addition time (1C code / creation order).
+    """
+    if not l_images:
+        return []
+
+    main_img = None
+    remaining = []
+    for img in l_images:
+        if isinstance(img, dict) and img.get('is_main') and main_img is None:
+            main_img = img
+        else:
+            remaining.append(img)
+
+    all_numeric = True
+    for img in l_images:
+        name_val = img.get('name', '') if isinstance(img, dict) else ''
+        if _parse_image_num(name_val) is None:
+            all_numeric = False
+            break
+
+    if all_numeric:
+        remaining.sort(
+            key=lambda x: (
+                _parse_image_num(x.get('name', '') if isinstance(x, dict) else '') or 999999,
+                str(x.get('code', '')) if isinstance(x, dict) else '',
+                str(x.get('uuid', '')) if isinstance(x, dict) else str(x)
+            )
+        )
+    else:
+        remaining.sort(
+            key=lambda x: (
+                str(x.get('code', '')) if isinstance(x, dict) else '',
+                x.get('order_idx', 999999) if isinstance(x, dict) else 999999,
+                str(x.get('uuid', '')) if isinstance(x, dict) else str(x)
+            )
+        )
+
+    return ([main_img] if main_img else []) + remaining
+
 class NomenclatureManager:
     def __init__(self, c_connectionIn):
         self.c_connection = c_connectionIn
@@ -453,10 +516,18 @@ class NomenclatureManager:
             
         c_query = self.c_v8.NewObject("Query")
         c_query.Text = """
-            SELECT Объект AS ProductRef, Ссылка AS ImageRef, ХешФайла AS FileHash, ВерсияДанных AS DataVersion, ИмяФайла AS FileName
-            FROM Справочник.ХранилищеДополнительнойИнформации
-            WHERE Объект В (&ProductRefs) AND ПометкаУдаления = ЛОЖЬ
-            ORDER BY Наименование
+            SELECT 
+                Хранилище.Объект AS ProductRef, 
+                Хранилище.Ссылка AS ImageRef, 
+                Хранилище.Наименование AS ImageName,
+                Хранилище.Код AS ImageCode,
+                Хранилище.ХешФайла AS FileHash, 
+                Хранилище.ВерсияДанных AS DataVersion, 
+                Хранилище.ИмяФайла AS FileName,
+                Хранилище.Объект.ОсновноеИзображение AS MainImageRef
+            FROM Справочник.ХранилищеДополнительнойИнформации AS Хранилище
+            WHERE Хранилище.Объект В (&ProductRefs) AND Хранилище.ПометкаУдаления = ЛОЖЬ
+            ORDER BY Хранилище.Код
         """
         c_query.SetParameter("ProductRefs", c_refsV8)
         
@@ -465,10 +536,33 @@ class NomenclatureManager:
             c_res = c_query.Execute()
             if not c_res.IsEmpty():
                 c_sel = c_res.Select()
+                order_counter = 0
                 while c_sel.Next():
+                    order_counter += 1
                     s_productUuid = self.c_v8.String(c_sel.ProductRef.UUID())
                     s_imageUuid = self.c_v8.String(c_sel.ImageRef.UUID())
                     
+                    s_mainImageUuid = ""
+                    try:
+                        if c_sel.MainImageRef and not c_sel.MainImageRef.IsEmpty():
+                            s_mainImageUuid = self.c_v8.String(c_sel.MainImageRef.UUID())
+                    except Exception:
+                        pass
+
+                    is_main = bool(s_mainImageUuid and s_imageUuid == s_mainImageUuid)
+
+                    s_imageName = ""
+                    try:
+                        s_imageName = self.c_v8.String(c_sel.ImageName)
+                    except Exception:
+                        pass
+
+                    s_imageCode = ""
+                    try:
+                        s_imageCode = self.c_v8.String(c_sel.ImageCode)
+                    except Exception:
+                        pass
+
                     s_version = ""
                     try:
                         # Спершу пробуємо ХешФайла
@@ -492,9 +586,20 @@ class NomenclatureManager:
                             s_version += f"_{s_fname}"
                     except Exception:
                         pass
+
                     if s_productUuid not in d_batchImages:
                         d_batchImages[s_productUuid] = []
-                    d_batchImages[s_productUuid].append({"uuid": s_imageUuid, "version": s_version})
+                    d_batchImages[s_productUuid].append({
+                        "uuid": s_imageUuid,
+                        "version": s_version,
+                        "name": s_imageName,
+                        "code": s_imageCode,
+                        "is_main": is_main,
+                        "order_idx": order_counter
+                    })
+
+            for prod_uuid in d_batchImages:
+                d_batchImages[prod_uuid] = sort_product_images(d_batchImages[prod_uuid])
         except Exception as e:
             log_sys(f"Error in batch image metadata: {e}", 1)
             
@@ -728,18 +833,48 @@ class NomenclatureManager:
                 
                 c_query = self.c_v8.NewObject("Query")
                 c_query.Text = """
-                    SELECT Ссылка, ХешФайла AS FileHash, ВерсияДанных AS DataVersion, ИмяФайла AS FileName
-                    FROM Справочник.ХранилищеДополнительнойИнформации
-                    WHERE Объект = &ProductRef AND ПометкаУдаления = ЛОЖЬ
-                    ORDER BY Наименование
+                    SELECT 
+                        Хранилище.Ссылка AS ImageRef, 
+                        Хранилище.Наименование AS ImageName,
+                        Хранилище.Код AS ImageCode,
+                        Хранилище.ХешФайла AS FileHash, 
+                        Хранилище.ВерсияДанных AS DataVersion, 
+                        Хранилище.ИмяФайла AS FileName,
+                        Хранилище.Объект.ОсновноеИзображение AS MainImageRef
+                    FROM Справочник.ХранилищеДополнительнойИнформации AS Хранилище
+                    WHERE Хранилище.Объект = &ProductRef AND Хранилище.ПометкаУдаления = ЛОЖЬ
+                    ORDER BY Хранилище.Код
                 """
                 c_query.SetParameter("ProductRef", c_productRef)
                 c_res = c_query.Execute()
                 if not c_res.IsEmpty():
                     c_sel = c_res.Select()
+                    order_counter = 0
                     while c_sel.Next():
-                        s_imgUuid = self.c_v8.String(c_sel.Ссылка.UUID())
+                        order_counter += 1
+                        s_imgUuid = self.c_v8.String(c_sel.ImageRef.UUID())
                         
+                        s_mainImageUuid = ""
+                        try:
+                            if c_sel.MainImageRef and not c_sel.MainImageRef.IsEmpty():
+                                s_mainImageUuid = self.c_v8.String(c_sel.MainImageRef.UUID())
+                        except Exception:
+                            pass
+
+                        is_main = bool(s_mainImageUuid and s_imgUuid == s_mainImageUuid)
+
+                        s_imageName = ""
+                        try:
+                            s_imageName = self.c_v8.String(c_sel.ImageName)
+                        except Exception:
+                            pass
+
+                        s_imageCode = ""
+                        try:
+                            s_imageCode = self.c_v8.String(c_sel.ImageCode)
+                        except Exception:
+                            pass
+
                         s_ver = ""
                         try:
                             s_ver = self.c_v8.String(c_sel.FileHash)
@@ -761,9 +896,18 @@ class NomenclatureManager:
                                 s_ver += f"_{s_fname}"
                         except Exception:
                             pass
-                        l_imageUuids.append({"uuid": s_imgUuid, "version": s_ver})
+                        l_imageUuids.append({
+                            "uuid": s_imgUuid,
+                            "version": s_ver,
+                            "name": s_imageName,
+                            "code": s_imageCode,
+                            "is_main": is_main,
+                            "order_idx": order_counter
+                        })
             except Exception as e:
                 log_sys(f"Error fetching image references for {c_productObjIn.s_code}: {e}", 1)
+
+        l_imageUuids = sort_product_images(l_imageUuids)
 
         s_cleanProductUuid = str(getattr(c_productObjIn, 's_uuid', '')).replace('{', '').replace('}', '').replace('-', '')
         if not s_cleanProductUuid:
