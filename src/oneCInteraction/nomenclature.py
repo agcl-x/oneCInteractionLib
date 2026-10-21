@@ -517,17 +517,17 @@ class NomenclatureManager:
         c_query = self.c_v8.NewObject("Query")
         c_query.Text = """
             SELECT 
-                Хранилище.Объект AS ProductRef, 
-                Хранилище.Ссылка AS ImageRef, 
-                Хранилище.Наименование AS ImageName,
-                Хранилище.Код AS ImageCode,
-                Хранилище.ХешФайла AS FileHash, 
-                Хранилище.ВерсияДанных AS DataVersion, 
-                Хранилище.ИмяФайла AS FileName,
-                Хранилище.Объект.ОсновноеИзображение AS MainImageRef
-            FROM Справочник.ХранилищеДополнительнойИнформации AS Хранилище
-            WHERE Хранилище.Объект В (&ProductRefs) AND Хранилище.ПометкаУдаления = ЛОЖЬ
-            ORDER BY Хранилище.Код
+                ХранилищеФайлов.Объект AS ProductRef, 
+                ХранилищеФайлов.Ссылка AS ImageRef, 
+                ХранилищеФайлов.Наименование AS ImageName,
+                ХранилищеФайлов.Код AS ImageCode,
+                ХранилищеФайлов.ХешФайла AS FileHash, 
+                ХранилищеФайлов.ВерсияДанных AS DataVersion, 
+                ХранилищеФайлов.ИмяФайла AS FileName,
+                ВЫРАЗИТЬ(ХранилищеФайлов.Объект КАК Справочник.Номенклатура).ОсновноеИзображение AS MainImageRef
+            FROM Справочник.ХранилищеДополнительнойИнформации AS ХранилищеФайлов
+            WHERE ХранилищеФайлов.Объект В (&ProductRefs) AND ХранилищеФайлов.ПометкаУдаления = ЛОЖЬ
+            ORDER BY ХранилищеФайлов.Код
         """
         c_query.SetParameter("ProductRefs", c_refsV8)
         
@@ -834,16 +834,16 @@ class NomenclatureManager:
                 c_query = self.c_v8.NewObject("Query")
                 c_query.Text = """
                     SELECT 
-                        Хранилище.Ссылка AS ImageRef, 
-                        Хранилище.Наименование AS ImageName,
-                        Хранилище.Код AS ImageCode,
-                        Хранилище.ХешФайла AS FileHash, 
-                        Хранилище.ВерсияДанных AS DataVersion, 
-                        Хранилище.ИмяФайла AS FileName,
-                        Хранилище.Объект.ОсновноеИзображение AS MainImageRef
-                    FROM Справочник.ХранилищеДополнительнойИнформации AS Хранилище
-                    WHERE Хранилище.Объект = &ProductRef AND Хранилище.ПометкаУдаления = ЛОЖЬ
-                    ORDER BY Хранилище.Код
+                        ХранилищеФайлов.Ссылка AS ImageRef, 
+                        ХранилищеФайлов.Наименование AS ImageName,
+                        ХранилищеФайлов.Код AS ImageCode,
+                        ХранилищеФайлов.ХешФайла AS FileHash, 
+                        ХранилищеФайлов.ВерсияДанных AS DataVersion, 
+                        ХранилищеФайлов.ИмяФайла AS FileName,
+                        ВЫРАЗИТЬ(ХранилищеФайлов.Объект КАК Справочник.Номенклатура).ОсновноеИзображение AS MainImageRef
+                    FROM Справочник.ХранилищеДополнительнойИнформации AS ХранилищеФайлов
+                    WHERE ХранилищеФайлов.Объект = &ProductRef AND ХранилищеФайлов.ПометкаУдаления = ЛОЖЬ
+                    ORDER BY ХранилищеФайлов.Код
                 """
                 c_query.SetParameter("ProductRef", c_productRef)
                 c_res = c_query.Execute()

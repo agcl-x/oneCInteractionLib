@@ -1,3 +1,6 @@
+import os
+import tempfile
+from typing import Optional
 from datetime import datetime, date, timezone
 from .log import log_sys
 from . import structures
@@ -772,3 +775,380 @@ class OrdersManager:
         s_nomName = getattr(c_nomRef, 'Наименование', '')
         log_sys(f"Characteristic '{s_cleanProp}' NOT found in 1C for nomenclature '{s_nomName}'", 1)
         return self.c_v8.Catalogs.ХарактеристикиНоменклатуры.EmptyRef()
+
+    def _find_order_ref(self, order_identifier: str):
+        """Helper to find a 1C ЗаказПокупателя reference by UUID or document number."""
+        if not self.c_v8:
+            return None
+        clean_id = str(order_identifier).strip()
+        if not clean_id:
+            return None
+
+        # 1. Try by UUID if it looks like a UUID
+        if '-' in clean_id and len(clean_id) in (32, 36):
+            try:
+                v8_uuid = self.c_v8.NewObject("UUID", clean_id)
+                c_ref = self.c_v8.Documents.ЗаказПокупателя.GetRef(v8_uuid)
+                if not c_ref.IsEmpty():
+                    return c_ref
+            except Exception as e:
+                log_sys(f"_find_order_ref: Failed resolving by UUID '{clean_id}': {e}", 1)
+
+        # 2. Try by document number (query latest first)
+        try:
+            query = self.c_v8.NewObject("Query")
+            query.Text = """
+                SELECT TOP 1 Ссылка AS Ref
+                FROM Документ.ЗаказПокупателя
+                WHERE Номер = &OrderNumber
+                ORDER BY Дата DESC
+            """
+            query.SetParameter("OrderNumber", clean_id)
+            result = query.Execute()
+            if not result.IsEmpty():
+                sel = result.Select()
+                sel.Next()
+                return sel.Ref
+        except Exception as q_err:
+            log_sys(f"_find_order_ref: Query by number failed: {q_err}", 1)
+
+        # 3. Fallback to FindByNumber directly
+        try:
+            now_dt = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=timezone.utc)
+            c_ref = self.c_v8.Documents.ЗаказПокупателя.FindByNumber(clean_id, now_dt)
+            if not c_ref.IsEmpty():
+                return c_ref
+        except Exception as fb_err:
+            log_sys(f"_find_order_ref: FindByNumber failed: {fb_err}", 1)
+
+        return None
+
+    def _save_tabdoc_to_pdf_bytes(self, c_tabDoc) -> Optional[bytes]:
+        """Converts a 1C TabularDocument (ТабличныйДокумент) to PDF bytes and unlinks temp file."""
+        if not c_tabDoc or not self.c_v8:
+            return None
+
+        temp_file = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+        temp_path = temp_file.name
+        temp_file.close()
+
+        try:
+            pdf_type = self.c_v8.ТипФайлаТабличногоДокумента.PDF
+            c_tabDoc.Записать(temp_path, pdf_type)
+            if os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+                with open(temp_path, 'rb') as f:
+                    pdf_bytes = f.read()
+                return pdf_bytes
+            return None
+        except Exception as e:
+            log_sys(f"Error saving 1C TabularDocument to PDF: {e}", 1)
+            return None
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+
+    def _print_document_object(self, c_docObj, candidate_template_names: list) -> Optional[bytes]:
+        """Helper to execute Печать() on a 1C document object with candidate template names."""
+        if not c_docObj or not self.c_v8:
+            return None
+
+        # Build list of templates: candidates first, then document metadata templates
+        templates_to_try = list(candidate_template_names)
+        try:
+            md = c_docObj.Метаданные()
+            for i in range(md.Макеты.Количество()):
+                t_name = str(md.Макеты.Получить(i).Имя)
+                if t_name not in templates_to_try:
+                    for cand in candidate_template_names:
+                        if cand.lower() in t_name.lower():
+                            templates_to_try.append(t_name)
+                            break
+        except Exception as md_err:
+            log_sys(f"Failed reading document templates metadata: {md_err}")
+
+        for tmpl in templates_to_try:
+            try:
+                # 1. Try Печать(tmpl, 1)
+                tab_doc = c_docObj.Печать(tmpl, 1)
+                pdf_bytes = self._save_tabdoc_to_pdf_bytes(tab_doc)
+                if pdf_bytes:
+                    log_sys(f"Successfully generated PDF using template '{tmpl}' (two arguments)")
+                    return pdf_bytes
+            except Exception:
+                try:
+                    # 2. Try Печать(tmpl)
+                    tab_doc = c_docObj.Печать(tmpl)
+                    pdf_bytes = self._save_tabdoc_to_pdf_bytes(tab_doc)
+                    if pdf_bytes:
+                        log_sys(f"Successfully generated PDF using template '{tmpl}' (single argument)")
+                        return pdf_bytes
+                except Exception:
+                    pass
+
+        # 3. Try Печать() with no arguments as a final fallback
+        try:
+            tab_doc = c_docObj.Печать()
+            pdf_bytes = self._save_tabdoc_to_pdf_bytes(tab_doc)
+            if pdf_bytes:
+                log_sys("Successfully generated PDF using default Печать()")
+                return pdf_bytes
+        except Exception:
+            pass
+
+        return None
+
+    def print_order_invoice_pdf(self, order_identifier: str) -> Optional[bytes]:
+        """
+        Generates and returns PDF bytes for the invoice (Рахунок на оплату) of a customer order.
+        """
+        c_orderRef = self._find_order_ref(order_identifier)
+        if not c_orderRef or c_orderRef.IsEmpty():
+            log_sys(f"print_order_invoice_pdf: Order '{order_identifier}' not found in 1C.", 1)
+            return None
+
+        try:
+            c_orderObj = c_orderRef.GetObject()
+            candidates = ["СчетЗаказ", "Счет", "СчетНаОплату", "ЗаказПокупателя"]
+            pdf_bytes = self._print_document_object(c_orderObj, candidates)
+            if pdf_bytes:
+                return pdf_bytes
+            log_sys(f"print_order_invoice_pdf: Could not generate invoice PDF for order '{order_identifier}'", 1)
+            return None
+        except Exception as e:
+            log_sys(f"print_order_invoice_pdf: Exception during invoice generation for '{order_identifier}': {e}", 1)
+            return None
+
+    def print_delivery_note_pdf(self, order_identifier: str) -> Optional[bytes]:
+        """
+        Generates and returns PDF bytes for the delivery note (Видаткова накладна)
+        from the linked 1C document РеализацияТоваровУслуг.
+        """
+        c_orderRef = self._find_order_ref(order_identifier)
+        if not c_orderRef or c_orderRef.IsEmpty():
+            log_sys(f"print_delivery_note_pdf: Order '{order_identifier}' not found in 1C.", 1)
+            return None
+
+        c_realizeRef = None
+        # 1. Query for linked РеализацияТоваровУслуг
+        try:
+            query = self.c_v8.NewObject("Query")
+            query.Text = """
+                SELECT TOP 1 Ссылка AS Ref
+                FROM Документ.РеализацияТоваровУслуг
+                WHERE (Сделка = &OrderRef OR ДокументОснование = &OrderRef)
+                  AND ПометкаУдаления = ЛОЖЬ
+                ORDER BY Дата DESC
+            """
+            query.SetParameter("OrderRef", c_orderRef)
+            res = query.Execute()
+            if not res.IsEmpty():
+                sel = res.Select()
+                sel.Next()
+                c_realizeRef = sel.Ref
+        except Exception as q_err:
+            log_sys(f"print_delivery_note_pdf: Query for realization failed: {q_err}", 1)
+
+        # 2. Fallback to КритерииОтбора.СвязанныеДокументы
+        if not c_realizeRef or c_realizeRef.IsEmpty():
+            try:
+                sub_docs = self.c_v8.КритерииОтбора.СвязанныеДокументы.Найти(c_orderRef)
+                for i in range(sub_docs.Count()):
+                    doc = sub_docs.Get(i)
+                    if "РеализацияТоваровУслуг" in str(doc.Metadata().Name) and not doc.ПометкаУдаления:
+                        c_realizeRef = doc
+                        break
+            except Exception:
+                pass
+
+        if not c_realizeRef or c_realizeRef.IsEmpty():
+            log_sys(f"print_delivery_note_pdf: No linked РеализацияТоваровУслуг found for order '{order_identifier}'.", 1)
+            return None
+
+        try:
+            c_realizeObj = c_realizeRef.GetObject()
+            candidates = ["Накладная", "РасходнаяНакладная", "РеализацияТоваровУслуг"]
+            pdf_bytes = self._print_document_object(c_realizeObj, candidates)
+            if pdf_bytes:
+                return pdf_bytes
+            log_sys(f"print_delivery_note_pdf: Could not generate delivery note PDF for order '{order_identifier}'", 1)
+            return None
+        except Exception as e:
+            log_sys(f"print_delivery_note_pdf: Exception during delivery note generation for '{order_identifier}': {e}", 1)
+            return None
+
+    def create_or_post_realization(self, order_identifier: str) -> dict:
+        """
+        Finds or creates a РеализацияТоваровУслуг based on ЗаказПокупателя.
+        Attempts to post it (DocumentWriteMode.Posting).
+        If posting fails (e.g. stock/party deficiency), falls back to saving as draft (DocumentWriteMode.Write).
+        Returns dict with status and details.
+        """
+        if not self.c_v8:
+            return {"success": False, "error": "No connection to 1C"}
+
+        c_orderRef = self._find_order_ref(order_identifier)
+        if not c_orderRef or c_orderRef.IsEmpty():
+            log_sys(f"create_or_post_realization: Order '{order_identifier}' not found in 1C.", 1)
+            return {"success": False, "error": f"Order '{order_identifier}' not found in 1C"}
+
+        c_realizeRef = None
+        # 1. Check if realization already exists
+        try:
+            query = self.c_v8.NewObject("Query")
+            query.Text = """
+                SELECT TOP 1 Ссылка AS Ref
+                FROM Документ.РеализацияТоваровУслуг
+                WHERE (Сделка = &OrderRef OR ДокументОснование = &OrderRef)
+                  AND ПометкаУдаления = ЛОЖЬ
+                ORDER BY Дата DESC
+            """
+            query.SetParameter("OrderRef", c_orderRef)
+            res = query.Execute()
+            if not res.IsEmpty():
+                sel = res.Select()
+                sel.Next()
+                c_realizeRef = sel.Ref
+        except Exception as q_err:
+            log_sys(f"create_or_post_realization: Query existing realization failed: {q_err}", 1)
+
+        if not c_realizeRef or c_realizeRef.IsEmpty():
+            try:
+                sub_docs = self.c_v8.КритерииОтбора.СвязанныеДокументы.Найти(c_orderRef)
+                for i in range(sub_docs.Count()):
+                    doc = sub_docs.Get(i)
+                    if "РеализацияТоваровУслуг" in str(doc.Metadata().Name) and not doc.ПометкаУдаления:
+                        c_realizeRef = doc
+                        break
+            except Exception:
+                pass
+
+        if c_realizeRef and not c_realizeRef.IsEmpty():
+            # Realization already exists
+            try:
+                c_realizeObj = c_realizeRef.GetObject()
+                realize_num = str(c_realizeObj.Номер)
+                realize_uuid = ""
+                try:
+                    realize_uuid = str(self.c_v8.String(c_realizeRef.UUID())).lower()
+                except Exception:
+                    pass
+
+                if c_realizeObj.Проведен:
+                    log_sys(f"create_or_post_realization: Realization #{realize_num} already exists and is posted.")
+                    return {
+                        "success": True,
+                        "realization_number": realize_num,
+                        "realization_uuid": realize_uuid,
+                        "is_posted": True,
+                        "already_existed": True,
+                        "warning": None
+                    }
+
+                # If exists but not posted, try posting
+                try:
+                    c_realizeObj.Write(self.c_v8.DocumentWriteMode.Posting)
+                    log_sys(f"create_or_post_realization: Successfully posted existing realization #{realize_num}")
+                    return {
+                        "success": True,
+                        "realization_number": realize_num,
+                        "realization_uuid": realize_uuid,
+                        "is_posted": True,
+                        "already_existed": True,
+                        "warning": None
+                    }
+                except Exception as post_err:
+                    warn = f"Реалізацію #{realize_num} збережено, але не проведено: {post_err}"
+                    log_sys(f"create_or_post_realization: {warn}", 1)
+                    return {
+                        "success": True,
+                        "realization_number": realize_num,
+                        "realization_uuid": realize_uuid,
+                        "is_posted": False,
+                        "already_existed": True,
+                        "warning": warn
+                    }
+            except Exception as e:
+                log_sys(f"create_or_post_realization: Error handling existing realization: {e}", 1)
+                return {"success": False, "error": str(e)}
+
+        # 2. Create new РеализацияТоваровУслуг based on ЗаказПокупателя
+        try:
+            log_sys(f"create_or_post_realization: Creating new РеализацияТоваровУслуг for order '{order_identifier}'...")
+            c_realizeObj = self.c_v8.Documents.РеализацияТоваровУслуг.CreateDocument()
+            c_realizeObj.Заполнить(c_orderRef)
+            
+            # Set current date/time in Kyiv
+            now_dt = datetime.now(self.c_connection.tz_kiev).replace(tzinfo=timezone.utc)
+            c_realizeObj.Дата = now_dt
+
+            try:
+                c_realizeObj.Сделка = c_orderRef
+            except Exception:
+                pass
+            try:
+                c_realizeObj.ДокументОснование = c_orderRef
+            except Exception:
+                pass
+
+            is_posted = False
+            warning = None
+
+            # Attempt posting first
+            try:
+                c_realizeObj.Write(self.c_v8.DocumentWriteMode.Posting)
+                is_posted = True
+                log_sys(f"create_or_post_realization: Successfully created and posted realization #{c_realizeObj.Номер}")
+            except Exception as post_err:
+                # Fallback to saving as draft
+                warning = f"Реалізацію створено як чорновик (не проведено через залишки/партії): {post_err}"
+                log_sys(f"create_or_post_realization: Posting failed ({post_err}). Writing as unposted draft...", 1)
+                try:
+                    c_realizeObj.Write(self.c_v8.DocumentWriteMode.Write)
+                except Exception as write_err:
+                    log_sys(f"create_or_post_realization: Write failed: {write_err}", 1)
+                    return {"success": False, "error": f"Помилка запису документа в 1С: {write_err}"}
+
+            realize_num = str(c_realizeObj.Номер)
+            realize_uuid = ""
+            try:
+                realize_uuid = str(self.c_v8.String(c_realizeObj.Ссылка.UUID())).lower()
+            except Exception:
+                pass
+
+            return {
+                "success": True,
+                "realization_number": realize_num,
+                "realization_uuid": realize_uuid,
+                "is_posted": is_posted,
+                "already_existed": False,
+                "warning": warning
+            }
+
+        except Exception as e:
+            log_sys(f"create_or_post_realization: Unexpected error: {e}", 1)
+            return {"success": False, "error": str(e)}
+
+    def print_order_pdf(self, order_identifier: str) -> Optional[bytes]:
+        """
+        Generates and returns PDF bytes for the Customer Order form (Бланк замовлення покупця)
+        from the 1C ЗаказПокупателя document.
+        """
+        c_orderRef = self._find_order_ref(order_identifier)
+        if not c_orderRef or c_orderRef.IsEmpty():
+            log_sys(f"print_order_pdf: Order '{order_identifier}' not found in 1C.", 1)
+            return None
+
+        try:
+            c_orderObj = c_orderRef.GetObject()
+            candidates = ["ЗаказПокупателя", "Заказ", "СчетЗаказ", "Счет"]
+            pdf_bytes = self._print_document_object(c_orderObj, candidates)
+            if pdf_bytes:
+                return pdf_bytes
+            log_sys(f"print_order_pdf: Could not generate order PDF for order '{order_identifier}'", 1)
+            return None
+        except Exception as e:
+            log_sys(f"print_order_pdf: Exception during order PDF generation for '{order_identifier}': {e}", 1)
+            return None
