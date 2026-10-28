@@ -17,10 +17,11 @@ def _is_system_dir(path: str) -> bool:
         pass
     return False
 
-env_logs_dir = os.environ.get('ONEC_LOGS_DIR') or os.environ.get('LOGS_DIR')
-if env_logs_dir:
-    LOGS_DIR = os.path.abspath(env_logs_dir)
-else:
+def get_logs_dir() -> str:
+    env_logs_dir = os.environ.get('ONEC_LOGS_DIR') or os.environ.get('LOGS_DIR')
+    if env_logs_dir:
+        return os.path.abspath(env_logs_dir)
+
     main_module = sys.modules.get('__main__')
     if main_module and hasattr(main_module, '__file__') and main_module.__file__:
         candidate = os.path.dirname(os.path.abspath(main_module.__file__))
@@ -36,12 +37,27 @@ else:
             break
         candidate = parent
 
+    # If the entry point is located in a known subfolder like manager, bot_manager, scripts, bin, tests
+    # and the parent directory has a 'logs' directory, main.py, or config, treat the parent directory as project_root
+    if candidate:
+        sub_name = os.path.basename(candidate).lower()
+        if sub_name in ("manager", "bot_manager", "scripts", "bin", "tests"):
+            parent = os.path.dirname(candidate)
+            if (
+                os.path.exists(os.path.join(parent, "logs")) or
+                os.path.exists(os.path.join(parent, "main.py")) or
+                os.path.exists(os.path.join(parent, "data", "config.json"))
+            ):
+                candidate = parent
+
     if not candidate or _is_system_dir(candidate):
         project_root = os.getcwd()
     else:
         project_root = candidate
 
-    LOGS_DIR = os.path.join(project_root, 'logs')
+    return os.path.join(project_root, 'logs')
+
+LOGS_DIR = get_logs_dir()
 
 def log_sys(message, errorFlag = 0, user_id = None):
     caller_filename = "system"
@@ -54,8 +70,9 @@ def log_sys(message, errorFlag = 0, user_id = None):
     log_filename = f"{caller_filename.split('.')[0]}.log"
     log_text = f"[{datetime.now().strftime('%H:%M %d.%m.%Y')}]{'[ERROR]' if errorFlag else '\t'} {message}\n"
 
+    current_logs_dir = get_logs_dir()
     try:
-        folder_path = os.path.join(LOGS_DIR, 'system')
+        folder_path = os.path.join(current_logs_dir, 'system')
         os.makedirs(folder_path, exist_ok=True)
         log_path = os.path.join(folder_path, log_filename)
         log(log_path, log_text)

@@ -188,7 +188,13 @@ class Connection:
         s_masked = mask_connection_string(self.s_connection_string)
         log_sys(f"Trying to initiate connection ({s_masked})...")
         try:
-            pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+            try:
+                pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+            except Exception:
+                try:
+                    pythoncom.CoInitialize()
+                except Exception:
+                    pass
             c_connector = win32com.client.Dispatch(self.s_prog_id)
         except Exception as e:
             s_reason = format_com_error(e, self.s_prog_id)
