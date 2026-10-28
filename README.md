@@ -83,10 +83,12 @@ conn_server = Connection.create_server("srv", "sportmaydan", "admin", "secure_pa
 - `s_organisation_code` (str): 1C organization code for new orders.
 - `sl_price_types` (list): List of price type names to cache automatically (defaults to `["Розничная", "Оптовая", "Закупочная"]`).
 - `s_connection_string` (str): Constructed 1C COM connection string (`File=...` or `Srvr=...;Ref=...`).
+- `s_prog_id` (str): ProgID of the COM connector (defaults to `"V83.COMConnector"`).
 - `c_v8`: The active 1C COM connection object (equals `None` if not connected).
+- `s_last_error` (str): Detailed, human-readable error description if connection fails.
 
 #### Methods:
-- `initiate_connection() -> None`: Establishes the COM connection to 1C using `V83.COMConnector` and caches price type references.
+- `initiate_connection() -> None`: Establishes the COM connection to 1C using `s_prog_id` (`V83.COMConnector`), logs detailed diagnostics on failure, and caches price type references.
 - `close_connection() -> None`: Closes the connection and releases COM resources.
 - `get_price_type_ref(s_nameIn: str)`: Returns the 1C COM reference for a price type by its name.
 
