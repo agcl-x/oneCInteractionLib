@@ -93,6 +93,26 @@ class ImageSortingTestCase(unittest.TestCase):
         # Main image u_num2 first, then remaining sorted by addition time: u_letter (code 002), then u_num1 (code 005)
         self.assertEqual([img["uuid"] for img in sorted_imgs], ["u_num2", "u_letter", "u_num1"])
 
+    def test_chronological_via_order_idx_without_code(self):
+        # In 1C where catalog has no 'Код', chronological order is preserved via order_idx
+        images = [
+            {'uuid': 'u_first', 'name': 'вигляд_збоку', 'code': '', 'order_idx': 1, 'is_main': False},
+            {'uuid': 'u_third', 'name': 'деталь', 'code': '', 'order_idx': 3, 'is_main': False},
+            {'uuid': 'u_second', 'name': 'вигляд_ззаду', 'code': '', 'order_idx': 2, 'is_main': False},
+        ]
+        sorted_imgs = sort_product_images(images)
+        self.assertEqual([img['uuid'] for img in sorted_imgs], ['u_first', 'u_second', 'u_third'])
+
+    def test_chronological_via_order_idx_with_main_image(self):
+        # Main image should be first, and remaining in order of order_idx
+        images = [
+            {'uuid': 'u1', 'name': 'фото_1', 'order_idx': 1, 'is_main': False},
+            {'uuid': 'u2', 'name': 'фото_головне', 'order_idx': 2, 'is_main': True},
+            {'uuid': 'u3', 'name': 'фото_3', 'order_idx': 3, 'is_main': False},
+        ]
+        sorted_imgs = sort_product_images(images)
+        self.assertEqual([img['uuid'] for img in sorted_imgs], ['u2', 'u1', 'u3'])
+
     def test_empty_and_legacy_structures(self):
         self.assertEqual(sort_product_images([]), [])
         legacy = [

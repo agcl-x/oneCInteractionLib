@@ -520,7 +520,7 @@ class NomenclatureManager:
                 ХранилищеФайлов.Объект AS ProductRef, 
                 ХранилищеФайлов.Ссылка AS ImageRef, 
                 ХранилищеФайлов.Наименование AS ImageName,
-                                ХранилищеФайлов.ХешФайла AS FileHash, 
+                ХранилищеФайлов.ХешФайла AS FileHash, 
                 ХранилищеФайлов.ВерсияДанных AS DataVersion, 
                 ХранилищеФайлов.ИмяФайла AS FileName,
                 Номенклатура.ОсновноеИзображение AS MainImageRef
@@ -528,7 +528,7 @@ class NomenclatureManager:
                 ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Номенклатура AS Номенклатура
                 ПО ХранилищеФайлов.Объект = Номенклатура.Ссылка
             WHERE ХранилищеФайлов.Объект В (&ProductRefs) AND ХранилищеФайлов.ПометкаУдаления = ЛОЖЬ
-            ORDER BY ХранилищеФайлов.Наименование
+            ORDER BY ХранилищеФайлов.Объект, ХранилищеФайлов.Ссылка
         """
         c_query.SetParameter("ProductRefs", c_refsV8)
         
@@ -537,10 +537,11 @@ class NomenclatureManager:
             c_res = c_query.Execute()
             if not c_res.IsEmpty():
                 c_sel = c_res.Select()
-                order_counter = 0
+                d_order_counters = {}
                 while c_sel.Next():
-                    order_counter += 1
                     s_productUuid = self.c_v8.String(c_sel.ProductRef.UUID())
+                    d_order_counters[s_productUuid] = d_order_counters.get(s_productUuid, 0) + 1
+                    order_counter = d_order_counters[s_productUuid]
                     s_imageUuid = self.c_v8.String(c_sel.ImageRef.UUID())
                     
                     s_mainImageUuid = ""
@@ -837,7 +838,7 @@ class NomenclatureManager:
                     SELECT 
                         ХранилищеФайлов.Ссылка AS ImageRef, 
                         ХранилищеФайлов.Наименование AS ImageName,
-                                                ХранилищеФайлов.ХешФайла AS FileHash, 
+                                ХранилищеФайлов.ХешФайла AS FileHash, 
                         ХранилищеФайлов.ВерсияДанных AS DataVersion, 
                         ХранилищеФайлов.ИмяФайла AS FileName,
                         Номенклатура.ОсновноеИзображение AS MainImageRef
@@ -845,7 +846,7 @@ class NomenclatureManager:
                         ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Номенклатура AS Номенклатура
                         ПО ХранилищеФайлов.Объект = Номенклатура.Ссылка
                     WHERE ХранилищеФайлов.Объект = &ProductRef AND ХранилищеФайлов.ПометкаУдаления = ЛОЖЬ
-                    ORDER BY ХранилищеФайлов.Наименование
+                    ORDER BY ХранилищеФайлов.Ссылка
                 """
                 c_query.SetParameter("ProductRef", c_productRef)
                 c_res = c_query.Execute()
