@@ -15,6 +15,14 @@ elif sys.argv and sys.argv[0]:
 else:
     project_root = os.getcwd()
 
+# Guard against execution wrappers (e.g., pytest.exe/__main__.py) where dirname points to an exe file
+while project_root and not os.path.isdir(project_root):
+    parent = os.path.dirname(project_root)
+    if parent == project_root:
+        project_root = os.getcwd()
+        break
+    project_root = parent
+
 # LOGS_DIR is resolved relative to the importing project
 LOGS_DIR = os.path.join(project_root, 'logs')
 

@@ -124,6 +124,15 @@ try:
     c_conn = Connection(s_oneCDatabasePathIn="test_db", s_usernameIn="admin", s_passwordIn="pass")
     print("Success: Connection class instantiated.")
     
+    # Test Server Connection instantiation & Factory methods
+    c_server_conn = Connection(s_serverIn="srv", s_databaseNameIn="sportmaydan", s_usernameIn="admin", s_passwordIn="pass")
+    assert c_server_conn.s_connection_string == "Srvr='srv';Ref='sportmaydan';Usr='admin';Pwd='pass';"
+    c_file_factory = Connection.create_file("test_db", "admin", "pass")
+    assert c_file_factory.s_connection_string == "File='test_db';Usr='admin';Pwd='pass';"
+    c_server_factory = Connection.create_server("srv", "sportmaydan", "admin", "pass")
+    assert c_server_factory.s_connection_string == "Srvr='srv';Ref='sportmaydan';Usr='admin';Pwd='pass';"
+    print("Success: Server Connection and factory methods instantiated and verified.")
+    
     assert c_conn.nomenclature is not None
     assert c_conn.groups is not None
     assert c_conn.orders is not None

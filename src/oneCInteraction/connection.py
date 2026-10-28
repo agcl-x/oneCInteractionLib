@@ -1,3 +1,4 @@
+from typing import Optional
 import pythoncom
 import pytz
 import win32com.client
@@ -19,12 +20,37 @@ class Connection:
 
     def __init__(
         self,
-        s_oneCDatabasePathIn: str,
-        s_usernameIn: str,
-        s_passwordIn: str
+        s_oneCDatabasePathIn: Optional[str] = None,
+        s_usernameIn: str = "",
+        s_passwordIn: str = "",
+        s_serverIn: Optional[str] = None,
+        s_databaseNameIn: Optional[str] = None
     ):
         """Initializes connection details, saves required codes, and instantiates managers."""
-        self.s_connection_string = f"File='{s_oneCDatabasePathIn}';Usr='{s_usernameIn}';Pwd='{s_passwordIn}';"
+        has_file = bool(s_oneCDatabasePathIn)
+        has_server = bool(s_serverIn or s_databaseNameIn)
+
+        if has_file and has_server:
+            raise ValueError("Cannot specify both file database path and server parameters simultaneously.")
+        if not has_file and not has_server:
+            raise ValueError(
+                "Either s_oneCDatabasePathIn (for file base) or both s_serverIn and s_databaseNameIn "
+                "(for server base) must be provided."
+            )
+        if has_server and (not s_serverIn or not s_databaseNameIn):
+            raise ValueError("Both s_serverIn and s_databaseNameIn must be provided for a server-based connection.")
+
+        self.s_oneCDatabasePath = s_oneCDatabasePathIn
+        self.s_server = s_serverIn
+        self.s_database_name = s_databaseNameIn
+        self.s_username = s_usernameIn
+        self.s_password = s_passwordIn
+
+        if has_file:
+            self.s_connection_string = f"File='{s_oneCDatabasePathIn}';Usr='{s_usernameIn}';Pwd='{s_passwordIn}';"
+        else:
+            self.s_connection_string = f"Srvr='{s_serverIn}';Ref='{s_databaseNameIn}';Usr='{s_usernameIn}';Pwd='{s_passwordIn}';"
+
         self.c_v8 = None
         self.d_price_types = {}
         
@@ -42,6 +68,36 @@ class Connection:
         self.customers = CustomersManager(self)
         self.discounts = DiscountsManager(self)
         self.properties = PropertiesManager(self)
+
+    @classmethod
+    def create_file(
+        cls,
+        s_databasePathIn: str,
+        s_usernameIn: str = "",
+        s_passwordIn: str = ""
+    ) -> "Connection":
+        """Factory method to create a Connection to a file-based 1C database."""
+        return cls(
+            s_oneCDatabasePathIn=s_databasePathIn,
+            s_usernameIn=s_usernameIn,
+            s_passwordIn=s_passwordIn
+        )
+
+    @classmethod
+    def create_server(
+        cls,
+        s_serverIn: str,
+        s_databaseNameIn: str,
+        s_usernameIn: str = "",
+        s_passwordIn: str = ""
+    ) -> "Connection":
+        """Factory method to create a Connection to a 1C:Enterprise server cluster database."""
+        return cls(
+            s_usernameIn=s_usernameIn,
+            s_passwordIn=s_passwordIn,
+            s_serverIn=s_serverIn,
+            s_databaseNameIn=s_databaseNameIn
+        )
 
     def initiate_connection(self) -> None:
         """Establishes COM connection to 1C and caches price type references."""

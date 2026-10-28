@@ -3,7 +3,7 @@
 A modular Python library for interacting with «1C:Enterprise» databases via a COM connection (`V83.COMConnector`). It enables seamless integration of 1C with websites, Telegram bots, or other external services.
 
 ## Features
-- **Full COM Connection Support** via `win32com`.
+- **Full COM Connection Support** via `win32com` for both file-based and client-server databases.
 - **Nomenclature and Categories Management**: retrieve group trees, batch load products, prices, and stock balances across warehouses.
 - **Product Characteristics**: read variant properties from information registers or parse text descriptions.
 - **Product Properties (Metadata)**: read and write general metadata (properties) of Nomenclature items to/from information registers.
@@ -41,20 +41,48 @@ The library is built on the principle of composition: the main `Connection` clas
 ## Detailed Class and Function Reference
 
 ### 1. Main Class `Connection`
-The `Connection` class (located in [connection.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/connection.py)) manages the COM connection to 1C and holds general settings.
+The `Connection` class (located in [connection.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/connection.py)) manages the COM connection to 1C and holds general settings. It supports both **file-based databases** and **client-server databases** (1C:Enterprise server cluster).
 
 #### Constructor:
 ```python
-def __init__(self, s_oneCDatabasePathIn: str, s_usernameIn: str, s_passwordIn: str)
+def __init__(
+    self,
+    s_oneCDatabasePathIn: Optional[str] = None,
+    s_usernameIn: str = "",
+    s_passwordIn: str = "",
+    s_serverIn: Optional[str] = None,
+    s_databaseNameIn: Optional[str] = None
+)
 ```
-- `s_oneCDatabasePathIn` (str): Absolute path to the file-based 1C database on disk.
+- `s_oneCDatabasePathIn` (str, optional): Absolute path to the file-based 1C database on disk (for file databases).
 - `s_usernameIn` (str): 1C username.
 - `s_passwordIn` (str): 1C password.
+- `s_serverIn` (str, optional): 1C server cluster address/name (for client-server databases, e.g. `"srv"` or `"srv:1541"`).
+- `s_databaseNameIn` (str, optional): Infobase name on the 1C server cluster (e.g. `"sportmaydan"`).
+
+> [!NOTE]
+> Provide either `s_oneCDatabasePathIn` (for file-based databases) or both `s_serverIn` and `s_databaseNameIn` (for server-based databases). If invalid or conflicting parameters are passed, a `ValueError` is raised.
+
+#### Factory Methods:
+- `Connection.create_file(s_databasePathIn: str, s_usernameIn: str = "", s_passwordIn: str = "") -> Connection`
+  Creates a Connection instance configured for a local/network file-based database.
+- `Connection.create_server(s_serverIn: str, s_databaseNameIn: str, s_usernameIn: str = "", s_passwordIn: str = "") -> Connection`
+  Creates a Connection instance configured for a 1C:Enterprise server cluster database.
+
+#### Example Initializations:
+```python
+# File-based database
+conn_file = Connection.create_file(r"C:\1C_Bases\ShopDB", "admin", "secure_password")
+
+# Server-based database (Кластер серверів: srv, Ім'я бази: sportmaydan)
+conn_server = Connection.create_server("srv", "sportmaydan", "admin", "secure_password")
+```
 
 #### Key Attributes:
 - `s_warehouse_code` (str): 1C warehouse code for new orders.
 - `s_organisation_code` (str): 1C organization code for new orders.
 - `sl_price_types` (list): List of price type names to cache automatically (defaults to `["Розничная", "Оптовая", "Закупочная"]`).
+- `s_connection_string` (str): Constructed 1C COM connection string (`File=...` or `Srvr=...;Ref=...`).
 - `c_v8`: The active 1C COM connection object (equals `None` if not connected).
 
 #### Methods:
@@ -231,8 +259,6 @@ Defined in [orders.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/
 
 ---
 
----
-
 ### 8. Customers Manager `CustomersManager` (`Connection.customers`)
 Defined in [customers.py](file:///c:/Users/agcl/PycharmProjects/oneCInteractionLib/src/oneCInteraction/customers.py).
 
@@ -287,12 +313,11 @@ All actions are logged automatically. The library resolves the root directory of
 ```python
 from oneCInteraction import Connection, Customer, Order, OrderItem
 
-# 1. Initialize Connection
-c_conn = Connection(
-    s_oneCDatabasePathIn="C:\\1C_Bases\\ShopDB",
-    s_usernameIn="AdminBot",
-    s_passwordIn="secure_password"
-)
+# 1. Initialize Connection (File or Server)
+# File base:
+# c_conn = Connection.create_file(r"C:\1C_Bases\ShopDB", "AdminBot", "secure_password")
+# Server base:
+c_conn = Connection.create_server("srv", "sportmaydan", "AdminBot", "secure_password")
 
 # 2. Configure 1C Default Codes
 c_conn.s_warehouse_code = "000000001"  # Warehouse code

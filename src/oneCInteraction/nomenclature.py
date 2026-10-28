@@ -524,8 +524,10 @@ class NomenclatureManager:
                 ХранилищеФайлов.ХешФайла AS FileHash, 
                 ХранилищеФайлов.ВерсияДанных AS DataVersion, 
                 ХранилищеФайлов.ИмяФайла AS FileName,
-                ВЫРАЗИТЬ(ХранилищеФайлов.Объект КАК Справочник.Номенклатура).ОсновноеИзображение AS MainImageRef
+                Номенклатура.ОсновноеИзображение AS MainImageRef
             FROM Справочник.ХранилищеДополнительнойИнформации AS ХранилищеФайлов
+                ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Номенклатура AS Номенклатура
+                ПО ХранилищеФайлов.Объект = Номенклатура.Ссылка
             WHERE ХранилищеФайлов.Объект В (&ProductRefs) AND ХранилищеФайлов.ПометкаУдаления = ЛОЖЬ
             ORDER BY ХранилищеФайлов.Код
         """
@@ -840,8 +842,10 @@ class NomenclatureManager:
                         ХранилищеФайлов.ХешФайла AS FileHash, 
                         ХранилищеФайлов.ВерсияДанных AS DataVersion, 
                         ХранилищеФайлов.ИмяФайла AS FileName,
-                        ВЫРАЗИТЬ(ХранилищеФайлов.Объект КАК Справочник.Номенклатура).ОсновноеИзображение AS MainImageRef
+                        Номенклатура.ОсновноеИзображение AS MainImageRef
                     FROM Справочник.ХранилищеДополнительнойИнформации AS ХранилищеФайлов
+                        ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Номенклатура AS Номенклатура
+                        ПО ХранилищеФайлов.Объект = Номенклатура.Ссылка
                     WHERE ХранилищеФайлов.Объект = &ProductRef AND ХранилищеФайлов.ПометкаУдаления = ЛОЖЬ
                     ORDER BY ХранилищеФайлов.Код
                 """
@@ -860,6 +864,13 @@ class NomenclatureManager:
                                 s_mainImageUuid = self.c_v8.String(c_sel.MainImageRef.UUID())
                         except Exception:
                             pass
+
+                        if not s_mainImageUuid:
+                            try:
+                                if c_productRef.ОсновноеИзображение and not c_productRef.ОсновноеИзображение.IsEmpty():
+                                    s_mainImageUuid = self.c_v8.String(c_productRef.ОсновноеИзображение.UUID())
+                            except Exception:
+                                pass
 
                         is_main = bool(s_mainImageUuid and s_imgUuid == s_mainImageUuid)
 
