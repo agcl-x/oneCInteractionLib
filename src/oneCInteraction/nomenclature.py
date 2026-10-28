@@ -520,8 +520,7 @@ class NomenclatureManager:
                 ХранилищеФайлов.Объект AS ProductRef, 
                 ХранилищеФайлов.Ссылка AS ImageRef, 
                 ХранилищеФайлов.Наименование AS ImageName,
-                ХранилищеФайлов.Код AS ImageCode,
-                ХранилищеФайлов.ХешФайла AS FileHash, 
+                                ХранилищеФайлов.ХешФайла AS FileHash, 
                 ХранилищеФайлов.ВерсияДанных AS DataVersion, 
                 ХранилищеФайлов.ИмяФайла AS FileName,
                 Номенклатура.ОсновноеИзображение AS MainImageRef
@@ -529,7 +528,7 @@ class NomenclatureManager:
                 ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Номенклатура AS Номенклатура
                 ПО ХранилищеФайлов.Объект = Номенклатура.Ссылка
             WHERE ХранилищеФайлов.Объект В (&ProductRefs) AND ХранилищеФайлов.ПометкаУдаления = ЛОЖЬ
-            ORDER BY ХранилищеФайлов.Код
+            ORDER BY ХранилищеФайлов.Наименование
         """
         c_query.SetParameter("ProductRefs", c_refsV8)
         
@@ -561,7 +560,7 @@ class NomenclatureManager:
 
                     s_imageCode = ""
                     try:
-                        s_imageCode = self.c_v8.String(c_sel.ImageCode)
+                        s_imageCode = self.c_v8.String(getattr(c_sel, 'ImageCode', ''))
                     except Exception:
                         pass
 
@@ -838,8 +837,7 @@ class NomenclatureManager:
                     SELECT 
                         ХранилищеФайлов.Ссылка AS ImageRef, 
                         ХранилищеФайлов.Наименование AS ImageName,
-                        ХранилищеФайлов.Код AS ImageCode,
-                        ХранилищеФайлов.ХешФайла AS FileHash, 
+                                                ХранилищеФайлов.ХешФайла AS FileHash, 
                         ХранилищеФайлов.ВерсияДанных AS DataVersion, 
                         ХранилищеФайлов.ИмяФайла AS FileName,
                         Номенклатура.ОсновноеИзображение AS MainImageRef
@@ -847,7 +845,7 @@ class NomenclatureManager:
                         ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Номенклатура AS Номенклатура
                         ПО ХранилищеФайлов.Объект = Номенклатура.Ссылка
                     WHERE ХранилищеФайлов.Объект = &ProductRef AND ХранилищеФайлов.ПометкаУдаления = ЛОЖЬ
-                    ORDER BY ХранилищеФайлов.Код
+                    ORDER BY ХранилищеФайлов.Наименование
                 """
                 c_query.SetParameter("ProductRef", c_productRef)
                 c_res = c_query.Execute()
@@ -882,7 +880,7 @@ class NomenclatureManager:
 
                         s_imageCode = ""
                         try:
-                            s_imageCode = self.c_v8.String(c_sel.ImageCode)
+                            s_imageCode = self.c_v8.String(getattr(c_sel, 'ImageCode', ''))
                         except Exception:
                             pass
 
