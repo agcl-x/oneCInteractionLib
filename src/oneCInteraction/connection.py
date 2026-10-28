@@ -52,6 +52,7 @@ class Connection:
             self.s_connection_string = f"Srvr='{s_serverIn}';Ref='{s_databaseNameIn}';Usr='{s_usernameIn}';Pwd='{s_passwordIn}';"
 
         self.c_v8 = None
+        self.s_last_error = ""
         self.d_price_types = {}
         
         # Save codes to self for order creation
@@ -110,6 +111,7 @@ class Connection:
             self._cache_price_types()
         except Exception as e:
             log_sys(f"Failed to connect to 1C: {e}")
+            self.s_last_error = str(e)
             self.c_v8 = None
 
     def _cache_price_types(self) -> None:
